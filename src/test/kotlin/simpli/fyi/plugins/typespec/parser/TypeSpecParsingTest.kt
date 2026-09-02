@@ -87,4 +87,21 @@ class TypeSpecParsingTest : ParsingTestCase("parser", "tsp", TypeSpecParserDefin
 
     /** Garbage between two good `model`s — ADR 0006 D6. */
     fun testBrokenStatement() = doTest(true)
+
+    /**
+     * Regression for `9aba27f` (plan 04 M6a, ADR 0007 D6): the owner's literal repro
+     * (`@@package(A.B, { name: "x" })`), the same defect on a plain decorator
+     * (`@dec({title: "x"})`), and a decorated model property (`@key @field(1) id: string;`).
+     * All three previously failed to parse.
+     */
+    fun testDecoratorModelExpressionArg() = doTest(true, true)
+
+    /**
+     * Regression for `9aba27f` (plan 04 M6b row 5 pulled forward early, ADR 0007's
+     * primary-source table): a single-member `model_expression` with no trailing separator
+     * (`{ name: "x" }`, the dominant inline-object shape) and the comma-separated form
+     * (`{ a: string, b: string }`) both parse — `,` is a valid model-body member
+     * separator upstream, not merely tolerated.
+     */
+    fun testModelExpressionSeparators() = doTest(true, true)
 }

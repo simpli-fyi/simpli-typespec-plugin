@@ -186,6 +186,30 @@ class TypeSpecPsiContractTest : BasePlatformTestCase() {
         }
     }
 
+    /**
+     * Regression for `9aba27f` (plan 04 M6b row 1 pulled forward, ADR 0007): `model_property`
+     * gained a leading `decorator_application*` and the `':'` pin moved 3 -> 4.
+     * [TypeSpecPsiUtil.findNameIdentifier] takes the *first* direct [TypeSpecIdentifier]
+     * child — `decorator_application` wraps a bare `DECORATOR` token and has no
+     * `TypeSpecIdentifier` child of its own, so this must still resolve to the property name
+     * `id`, not to the decorator. This is the exact contract M5.5 navigation depends on.
+     */
+    fun testDecoratedModelPropertyNameIsStillTheProperty() {
+        myFixture.configureByFile("psi/ContractFixtureDecoratedProperty.tsp")
+        val file = myFixture.file as TypeSpecFile
+        val property = PsiTreeUtil.findChildOfType(file, TypeSpecModelProperty::class.java)
+        assertNotNull(property)
+        assertTrue(property is TypeSpecNamedElement)
+        assertEquals("id", property!!.name)
+        val nameIdentifier = property.nameIdentifier
+        assertNotNull(nameIdentifier)
+        assertEquals("id", nameIdentifier!!.text)
+        assertEquals(nameIdentifier.textRange.startOffset, property.textOffset)
+        // The decorator precedes the name in source, so the property's own start (which
+        // includes the decorator) must be strictly before the resolved name offset.
+        assertTrue(property.textOffset > property.textRange.startOffset)
+    }
+
     fun testFileAccessors() {
         val file = configure()
 
