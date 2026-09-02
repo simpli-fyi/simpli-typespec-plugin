@@ -9,6 +9,10 @@
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
+    <!-- M5c (plan 03; ADR 0006 F10, ADR 0003 D3): CE-confirmed against IC-252.28539.97 and
+         owner-approved. spellchecker.support is `dynamic="true"`, no restart required. This is
+         the only sanctioned second <depends> — a third needs a new ADR. -->
+    <depends>com.intellij.modules.spellchecker</depends>
 
     <resource-bundle>messages.TypeSpecBundle</resource-bundle>
 
@@ -35,5 +39,8 @@
         <lang.quoteHandler
                 language="TypeSpec"
                 implementationClass="simpli.fyi.plugins.typespec.editor.TypeSpecQuoteHandler"/>
+        <spellchecker.support
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.spellchecker.TypeSpecSpellcheckingStrategy"/>
     </extensions>
 </idea-plugin>

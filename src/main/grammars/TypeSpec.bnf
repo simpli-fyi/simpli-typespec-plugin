@@ -55,6 +55,32 @@
     STRING='regexp:"[^"]*"'
     NUMBER='regexp:[0-9]+'
     KEYWORD='regexp:[a-z]+'
+    // M5c: decorator/augment-decorator applications. Unlike the punctuation
+    // literals below (fixed text, matched by GeneratedParserUtilBase's TEXT-based
+    // consumeToken), `@Ns.name` / `@@Ns.name` have *variable* text per
+    // application, so they must be recognised purely by token *type* — hence
+    // declared here (as IDENTIFIER/STRING/NUMBER/KEYWORD already are) and
+    // referenced bare (`DECORATOR`, `AUGMENT_DECORATOR`) rather than quoted. The
+    // hand-written lexer already emits one whole `@Ns.name` as a single DECORATOR
+    // token (ADR 0004 F6) — this grammar wraps that one token, it does not split
+    // it. The regexps below are never actually exercised (the hand-written lexer
+    // is used at runtime, same as every other declared token here); they only
+    // satisfy Grammar-Kit's own internal preview lexer.
+    DECORATOR='regexp:@[A-Za-z_][A-Za-z0-9_.]*'
+    AUGMENT_DECORATOR='regexp:@@[A-Za-z_][A-Za-z0-9_.]*'
+    // M5c: a *single* source string literal containing an escape sequence
+    // (`"hi\nthere"`) is lexed by the hand-written lexer as MULTIPLE leaf
+    // tokens — STRING, then alternating VALID_ESCAPE/INVALID_ESCAPE/STRING —
+    // never one token (`_TypeSpecLexer.flex`'s `STRING_S` state; this is an M2
+    // lexer decision, not something this milestone changes). Every grammar rule
+    // that consumes "a string literal" must therefore consume the whole
+    // `STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*` run, not a bare
+    // `STRING` alone, or any escaped string (e.g. `alias Greeting = "hi\nthere";`
+    // from kitchen-sink.tsp line 31) leaves a dangling leftover token and a
+    // PsiErrorElement. Declared here (as DECORATOR/AUGMENT_DECORATOR already
+    // are) purely so they can be referenced bare below.
+    VALID_ESCAPE='regexp:\\[^]'
+    INVALID_ESCAPE='regexp:\\[^]'
   ]
 }
 
@@ -65,7 +91,9 @@
 // empirically against a scratch grammar before writing this file (ADR 0006 F7).
 typespec_file ::= top_level_item_*
 
-private top_level_item_ ::= import_statement | using_statement | namespace_statement | model_statement | bad_top_level_token_
+private top_level_item_ ::= import_statement | using_statement | namespace_statement | model_statement
+  | op_statement | interface_statement | enum_statement | union_statement | alias_statement
+  | scalar_statement | augment_decorator_statement | bad_top_level_token_
 
 // ADR 0006 D6: no `recoverWhile` here, deliberately. `recoverWhile`'s built-in
 // skip mechanism re-checks its predicate even *after* a successful match of the
@@ -81,15 +109,16 @@ private top_level_item_ ::= import_statement | using_statement | namespace_state
 // `model_member_` further down uses the identical fallback-alternative
 // technique (and the identical "no recoverWhile" reasoning) for the
 // model-property loop.
-private bad_top_level_token_ ::= bad_top_level_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | ';' | '.' | ',' | ':'
-  | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '...')
+private bad_top_level_token_ ::= bad_top_level_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR | AUGMENT_DECORATOR
+  | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '...')
 
 // Stop set: '}' (leave an enclosing namespace block's own closing brace for
 // `namespace_block_` to consume) and the keyword that starts each known
 // top-level construct (so those are tried as *real* alternatives above, not
 // swallowed as garbage). Orphan ';' is deliberately NOT excluded — it is safe
 // to eat as garbage here since it terminates nothing on its own.
-private bad_top_level_guard_ ::= !('}' | 'model' | 'namespace' | 'using' | 'import')
+private bad_top_level_guard_ ::= !('}' | 'model' | 'namespace' | 'using' | 'import'
+  | 'op' | 'interface' | 'enum' | 'union' | 'alias' | 'scalar')
 
 import_statement ::= 'import' STRING ';' {
   pin=1
@@ -106,37 +135,51 @@ using_statement ::= 'using' qualified_name ';' {
 // "find the first namespace_statement child of the file" query, and
 // getTopLevelDeclarations() naturally stops at the blockless namespace's ';'
 // (ADR 0004 D7.4, plan 03 M5b risk note).
-namespace_statement ::= 'namespace' qualified_name (namespace_block_ | (';' top_level_item_*)) {
-  pin=1
+namespace_statement ::= decorator_application* 'namespace' qualified_name (namespace_block_ | (';' top_level_item_*)) {
+  pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
 private namespace_block_ ::= '{' top_level_item_* '}'
 
-model_statement ::= 'model' identifier template_parameter_list? extends_clause? is_clause? model_body {
-  pin=1
+model_statement ::= decorator_application* 'model' identifier template_parameter_list? extends_clause? is_clause? model_body {
+  pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
-// Template parameter *lists* only (declaring `T` in `model Page<T>`) — resolving
-// template *arguments* in type position (`Page<Pet>`) is M5c (the `<`/`>`
-// ambiguity is deliberately out of scope here, plan 03 M5b risk note).
+// Template parameter *lists* (declaring `T` in `model Page<T>`), now with an
+// optional `extends`-bound and default (`<T extends string = "x">`) — M5c:
+// kitchen-sink's `model Widget<T extends string>` needs the bound; resolving
+// template *arguments* in type position (`Page<Pet>`) is also M5c (settled:
+// plain recursive descent, no `<`/`>` ambiguity — see plan 03 M5c Approach).
 template_parameter_list ::= '<' template_parameter (',' template_parameter)* '>' {
   pin=1
 }
 
-template_parameter ::= identifier {
+template_parameter ::= identifier ('extends' type_expression_)? ('=' type_expression_)? {
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
-extends_clause ::= 'extends' qualified_name {
+// M5c: repointed from bare `qualified_name` at a full `type_expression_` (plan
+// 03 M5c Approach) — an `extends`/`is` target can be any type expression, not
+// only a plain reference (e.g. a union). `type_expression_` is `private`: the
+// precedence-chain wrapper rules (`type_expression_` /
+// `union_type_expression_` / `intersection_type_expression_` /
+// `array_type_expression_` / `type_reference_`) are pure structural glue with
+// no PSI-contract meaning of their own (same underscore-suffix convention as
+// `model_member_`/`top_level_item_`) — inlined, they add ZERO extra tree
+// nodes for the trivial "just a name" case, which is what keeps every M5b
+// golden (`ModelSimple.txt` et al.) byte-identical after this repointing.
+// Making any of them public would wrap even a bare `string` type in new
+// composite nodes and silently break the M5b regression sweep.
+extends_clause ::= 'extends' type_expression_ {
   pin=1
 }
 
-is_clause ::= 'is' qualified_name {
+is_clause ::= 'is' type_expression_ {
   pin=1
 }
 
@@ -172,8 +215,13 @@ model_spread ::= '...' qualified_name ';' {
 
 // Pins at ':' (position 3, after the optional '?'), not at the identifier —
 // ADR 0006 D6's example verbatim: a bare identifier alone is not yet the point
-// of no return, the ':' is.
-model_property ::= identifier '?'? ':' qualified_name ';' {
+// of no return, the ':' is. M5c: the type is now a full `type_expression_`
+// (repointed from bare `qualified_name`, plan 03 M5c Approach; `private`, see
+// `extends_clause`'s comment above) and an optional default value (`=
+// value_expression`) is added — kitchen-sink's `weight?: int32 = 10;` needs
+// it. Both additions are optional trailing/relocated sequence elements, so
+// `pin=3` (the ':') is unaffected by their position.
+model_property ::= identifier '?'? ':' type_expression_ ('=' value_expression)? ';' {
   pin=3
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
@@ -199,3 +247,274 @@ identifier ::= IDENTIFIER {
 // types, spread. Per-segment nodes are what let `Foo.Bar` be navigated segment
 // by segment later (M5.5); this milestone only builds the shape.
 qualified_name ::= identifier ('.' identifier)*
+
+// ============================================================================
+// M5c — decorator applications, augment-decorator statements, coarse value
+// literals (plan 03 M5c; ADR 0004 F6, D7.2).
+// ============================================================================
+
+// One lexer DECORATOR token (`@Ns.name`, ADR 0004 F6) wrapped in a PSI node.
+// Attached as a *leading, repeatable* element inside each declaration rule that
+// can be decorated (`namespace_statement`, `model_statement`, `op_statement`,
+// `interface_statement`, `enum_statement`, `union_statement`, `alias_statement`,
+// `scalar_statement`, `operation_parameter`) rather than split out of the token
+// itself — splitting `@Ns.name` into namespace + name is a separate, breaking
+// change to the M2/M3 lexer tests (ADR 0004 open question 1, owner's call, not
+// this milestone's).
+decorator_application ::= DECORATOR decorator_argument_list? {
+  pin=1
+}
+
+decorator_argument_list ::= '(' (value_expression (',' value_expression)*)? ')' {
+  pin=1
+}
+
+// `@@Ns.name(...)` — a distinct top-level STATEMENT (kitchen-sink's
+// `@@doc(Widget.id, "the id");`), not a prefix on another declaration. Always
+// has at least one argument (the target reference); the lexer already
+// distinguishes `@@` (AUGMENT_DECORATOR) from `@` (DECORATOR), so there is no
+// ambiguity with `decorator_application` above.
+augment_decorator_statement ::= AUGMENT_DECORATOR '(' value_expression (',' value_expression)* ')' ';' {
+  pin=1
+}
+
+// Coarse value-literal / value-expression grammar: enough to appear as a
+// decorator argument (`@service(#{ title: "..." })`) or a property default
+// value (`weight?: int32 = 10;`) — deliberately no inner structure beyond one
+// level of object/array nesting. A real value-expression grammar (string /
+// number / member-access / tuple / object literals composed arbitrarily) is
+// exactly the "value literals beyond a coarse rule" exclusion — plan 03 M5c
+// "Explicitly deferred", it lands with `const` in M5d.
+// See the `VALID_ESCAPE`/`INVALID_ESCAPE` tokens= comment: a string literal
+// with an escape sequence is several leaf tokens, not a bare `STRING`.
+value_expression ::= (STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*) | NUMBER | 'true' | 'false' | qualified_name | object_literal | array_literal
+
+// `#{ key: value, ... }` — the hand-written lexer already returns the whole
+// `#{` as one HASH_BRACE token (fixed text, unlike DECORATOR); the closing
+// `}` is the ordinary RBRACE literal, same as every other brace-delimited rule
+// in this grammar.
+object_literal ::= '#{' (object_literal_member (',' object_literal_member)* ','?)? '}' {
+  pin=1
+}
+
+object_literal_member ::= identifier ':' value_expression {
+  pin=2
+}
+
+// `#[ value, ... ]` — same reasoning as `object_literal` above, with `#[`
+// (HASH_BRACKET) / `]` (ordinary RBRACKET literal).
+array_literal ::= '#[' (value_expression (',' value_expression)*)? ']' {
+  pin=1
+}
+
+// ============================================================================
+// M5c — type-expression precedence chain (plan 03 M5c Approach, settled;
+// DO NOT re-litigate). Loosest to tightest: union `|` -> intersection `&` ->
+// array `[]` postfix -> primary. Flat/associative, NOT left-recursive: TypeSpec
+// itself defines `|`/`&` as flat repetition, so these are iterative repetition
+// rules, not `expression ::= expression '|' expression` left recursion.
+//
+// Every rule in this chain (down to `type_reference_`) is `private`
+// (trailing-underscore names, same convention as `model_member_` /
+// `top_level_item_`): pure structural glue with no PSI-contract meaning of
+// its own. Inlined, they add ZERO extra tree nodes for the trivial "just a
+// name" case (e.g. `id: string;`) — which is what keeps every M5b golden
+// (`ModelSimple.txt` et al.) byte-identical now that `model_property`,
+// `extends_clause` and `is_clause` are repointed at this chain instead of a
+// bare `qualified_name`. Making any of them public would wrap even a bare
+// `string` type in new composite nodes and silently break the M5b regression
+// sweep (plan 03 M5c "Full regression sweep").
+// ============================================================================
+
+private type_expression_ ::= union_type_expression_
+
+// Leading `|` is legal (`| A | B`), hence the optional prefix.
+private union_type_expression_ ::= '|'? intersection_type_expression_ ('|' intersection_type_expression_)*
+
+// Leading `&` is legal (`& A & B`), hence the optional prefix.
+private intersection_type_expression_ ::= '&'? array_type_expression_ ('&' array_type_expression_)*
+
+// Postfix, repeatable: `Foo[][]`. There is no `T?` type suffix in TypeSpec —
+// optionality is `model_property` / `operation_parameter`'s own `'?'?`, already
+// implemented; do NOT add a `'?'` alternative here (plan 03 M5c Approach).
+private array_type_expression_ ::= primary_type_expression ('[' ']')*
+
+// Order matters only for `void`/`never`/`unknown`: the hand-written lexer
+// keywordizes all three (`_TypeSpecLexer.flex` lines 103-105), so they can
+// *never* reach `type_reference_`'s `qualified_name` (IDENTIFIER-only) path —
+// omitting `intrinsic_type` here is the landmine that makes `op f(): void;`
+// fail to parse, not the `<`/`>` ambiguity (plan 03 M5c Approach/Risks).
+private primary_type_expression ::= intrinsic_type | type_reference_ | literal_type | paren_type_expression
+  | model_expression | tuple_expression
+
+intrinsic_type ::= 'void' | 'never' | 'unknown'
+
+// `template_argument_list` is plain recursive descent, exactly like
+// `template_parameter_list` — TypeSpec has no relational/comparison expression
+// grammar competing for `<`/`>` in this position (verified against upstream
+// `parser.ts`/`spec.emu.html`; plan 03 M5c Approach/Risks, now CLOSED). No
+// external rules, no token remapping.
+private type_reference_ ::= qualified_name template_argument_list?
+
+template_argument_list ::= '<' template_argument (',' template_argument)* '>' {
+  pin=1
+}
+
+// Named arguments first (ordered choice) so `Name<T=Foo>` resolves as a named
+// argument, not a bare `type_expression_` that happens to start with an
+// identifier followed by `=`.
+private template_argument ::= (identifier '=' type_expression_) | type_expression_
+
+// A string literal is `STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*`, not
+// a bare `STRING` — see the `VALID_ESCAPE`/`INVALID_ESCAPE` tokens= comment
+// above for why an escape splits one source literal into several leaf tokens.
+literal_type ::= STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)* | NUMBER | 'true' | 'false'
+
+paren_type_expression ::= '(' type_expression_ ')' {
+  pin=1
+}
+
+// Coarse anonymous model type (`{ a: string }` in type position) — reuses
+// `model_member_` (the same private member-loop `model_body` already uses), so
+// its `model_property`/`model_spread`/recovery shape is identical, not
+// reimplemented.
+model_expression ::= '{' model_member_* '}' {
+  pin=1
+}
+
+// Coarse tuple type (`[T, U]`). Distinguishable from `array_type_expression_`'s
+// empty postfix `[]` by always having content between the brackets when it has
+// any (an empty `[]` here and an empty postfix are structurally the same
+// token pair; upstream treats a bare `[]` as an empty tuple, which this rule
+// also accepts).
+tuple_expression ::= '[' (type_expression_ (',' type_expression_)*)? ']' {
+  pin=1
+}
+
+// ============================================================================
+// M5c — remaining declaration kinds (plan 03 M5c; ADR 0004 D7.2 named-element
+// contract: op, interface, enum + enum member, union + union variant, alias,
+// scalar).
+// ============================================================================
+
+op_statement ::= decorator_application* 'op' identifier operation_parameter_list ':' type_expression_ ';' {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+operation_parameter_list ::= '(' (operation_parameter (',' operation_parameter)*)? ')' {
+  pin=1
+}
+
+// Decorated parameters (`@path id: string`) — kitchen-sink's `op read(@path
+// id: string): ...`. Not part of ADR 0004 D7.2's named-element contract (only
+// `op`/`interface`/`enum`+member/`union`+variant/`alias`/`scalar` are), so no
+// `mixin=`/`implements=` here — same precedent as `model_spread` in M5b.
+operation_parameter ::= decorator_application* identifier '?'? ':' type_expression_ {
+  pin=4
+}
+
+// `interface`'s members are bare operation signatures (`list(): Widget<string>
+// []; get(id: string): Widget<string> | Error;`, kitchen-sink's `Store`) — NOT
+// bare properties. The invalid `interface Store { values: #[1, 2, 3]; }` shape
+// from `kitchen-sink.tsp` is explicitly not valid TypeSpec and is not
+// accommodated here (plan 03 M5c "Kitchen-sink scope resolution").
+interface_statement ::= decorator_application* 'interface' identifier template_parameter_list? interface_body {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+interface_body ::= '{' interface_member_* '}' {
+  pin=1
+}
+
+private interface_member_ ::= interface_operation | bad_interface_member_token_
+
+// ADR 0006 D6: identical fallback-alternative recovery technique as
+// `bad_top_level_token_`/`bad_model_member_token_` — no `recoverWhile` (it
+// traps on its own successful match re-check, plan 03 M5c "Recovery").
+private bad_interface_member_token_ ::= bad_interface_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD
+  | DECORATOR | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')'
+  | '[' | ']' | '...')
+
+private bad_interface_member_guard_ ::= !('}')
+
+// Not part of ADR 0004 D7.2's named-element contract (interface operation
+// *members* are deliberately excluded from the list — only the top-level `op`
+// declaration is), so no `mixin=`/`implements=` here.
+interface_operation ::= decorator_application* identifier operation_parameter_list ':' type_expression_ ';' {
+  pin=3
+}
+
+enum_statement ::= decorator_application* 'enum' identifier enum_body {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+enum_body ::= '{' enum_member_* '}' {
+  pin=1
+}
+
+private enum_member_ ::= enum_member | bad_enum_member_token_
+
+// ADR 0006 D6: same reasoning as above. Separator commas between members are
+// not part of `enum_member`'s own rule, so they simply fall through to the
+// fallback alternative below (a harmless single-token "garbage" skip) and the
+// loop continues to the next real member — identical in spirit to how
+// `bad_model_member_token_` swallows leftover tokens after a broken property.
+private bad_enum_member_token_ ::= bad_enum_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR
+  | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']'
+  | '...')
+
+private bad_enum_member_guard_ ::= !('}')
+
+// Plain members (`Red`) and members with a value (`Red: "red"`) — kitchen-sink's
+// `enum Color { Red: "red", Green: "green" }`.
+enum_member ::= decorator_application* identifier (':' value_expression)? {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+union_statement ::= decorator_application* 'union' identifier union_body {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+union_body ::= '{' union_variant_* '}' {
+  pin=1
+}
+
+private union_variant_ ::= union_variant | bad_union_variant_token_
+
+// ADR 0006 D6: same reasoning as `bad_enum_member_token_` above.
+private bad_union_variant_token_ ::= bad_union_variant_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR
+  | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']'
+  | '...')
+
+private bad_union_variant_guard_ ::= !('}')
+
+union_variant ::= decorator_application* identifier ':' type_expression_ {
+  pin=3
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+// `alias Name = type_expression;` — kitchen-sink's `alias Greeting = "hi\nthere";`
+// (a string *literal type*, reached via `type_expression` ->
+// `literal_type` -> STRING).
+alias_statement ::= decorator_application* 'alias' identifier template_parameter_list? '=' type_expression_ ';' {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+scalar_statement ::= decorator_application* 'scalar' identifier template_parameter_list? ('extends' type_expression_)? ';' {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}

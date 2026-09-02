@@ -45,6 +45,43 @@ class TypeSpecParsingTest : ParsingTestCase("parser", "tsp", TypeSpecParserDefin
 
     fun testBacktickIdentifier() = doTest(true, true)
 
+    fun testOperation() = doTest(true, true)
+
+    fun testInterface() = doTest(true, true)
+
+    fun testEnum() = doTest(true, true)
+
+    fun testUnion() = doTest(true, true)
+
+    fun testAlias() = doTest(true, true)
+
+    fun testScalar() = doTest(true, true)
+
+    fun testDecorators() = doTest(true, true)
+
+    fun testAugmentDecorator() = doTest(true, true)
+
+    fun testTypeUnion() = doTest(true, true)
+
+    fun testTypeIntersection() = doTest(true, true)
+
+    fun testTypeArray() = doTest(true, true)
+
+    fun testTypeTemplateArgs() = doTest(true, true)
+
+    /** Regression guard for the keywordized-intrinsics landmine (plan 03 M5c Risks). */
+    fun testTypeIntrinsics() = doTest(true, true)
+
+    /**
+     * Replaces revision 2's withdrawn `TypeOptional` fixture (there is no `T?` type suffix in
+     * TypeSpec): asserts M5b's optional-property behaviour still holds once the property type
+     * is a full type expression.
+     */
+    fun testOptionalPropertyComplexType() = doTest(true, true)
+
+    /** M5c's real done-signal (plan 03) — the M5c-achievable subset of kitchen-sink.tsp. */
+    fun testKitchenSinkCore() = doTest(true, true)
+
     /** A property missing its type (`broken;`), followed by a good one — ADR 0006 D6. */
     fun testBrokenProperty() = doTest(true)
 

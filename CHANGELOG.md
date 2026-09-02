@@ -84,3 +84,35 @@
   `TypeSpecPsiContractTest` (named-element contract + `TypeSpecFile` accessors — caught a
   real bug in `TypeSpecPsiUtil.findNameIdentifier()` misidentifying a property's type as its
   name). `kitchen-sink.tsp` is not expected to parse error-free yet (M5c constructs).
+- M5c: extends the grammar (`docs/plans/03-grammar-and-psi.md` M5c,
+  `docs/adr/0004-reference-resolution-approach.md` D7.2) to `op`/`interface`/`enum`
+  (+ member)/`union` (+ variant)/`alias`/`scalar` declarations, decorator applications
+  (`@doc(...)`) and augment-decorator statements (`@@doc(Widget.id, "the id");`), and a
+  full type-expression precedence chain (`type_expression_ -> union_type_expression_ ->
+  intersection_type_expression_ -> array_type_expression_ -> primary_type_expression`,
+  covering `|`/`&`/postfix `[]`/template arguments/the keywordized `void`/`never`/`unknown`
+  intrinsics). Every rule in that chain is `private` (trailing-underscore names) so it adds
+  zero extra tree nodes for the trivial "just a name" case — this is what keeps every M5b
+  golden byte-identical; the tradeoff is that even a *real* union/intersection/array type
+  shows up as flat sibling tokens (`BAR`/`AMP`/`LBRACKET`/`RBRACKET`) rather than nested
+  `UnionTypeExpression`/etc. composite nodes. Added a coarse `value_expression` grammar
+  (`STRING`/`NUMBER`/`true`/`false`/`qualified_name`/`#{ }` object literals/`#[ ]` array
+  literals) for decorator arguments and property defaults. Discovered and fixed a real
+  landmine: the hand-written lexer splits any string literal containing an escape sequence
+  (e.g. `"hi\nthere"`) into multiple leaf tokens (`STRING`, `VALID_ESCAPE`/`INVALID_ESCAPE`,
+  `STRING`, ...) rather than one — every grammar rule that consumes "a string literal"
+  (`literal_type`, `value_expression`) now consumes the whole
+  `STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*` run, not a bare `STRING`. Extended the
+  named-element contract to all eight new declaration/member kinds (same `mixin=`/
+  `implements=` pattern, no `methods=[...]`/`psiImplUtilClass`). Ships the (ratified)
+  `spellchecker.support` extension — `TypeSpecSpellcheckingStrategy` (comments/strings via
+  `CommentSplitter`/`TextSplitter`, identifiers via `IdentifierSplitter`) — behind a second,
+  intentional `<depends>com.intellij.modules.spellchecker</depends>` (`build.gradle.kts`
+  gained a matching `bundledModule("intellij.spellchecker")` for the compile classpath). New
+  fixture `src/test/testData/parser/KitchenSinkCore.tsp` (the M5c-achievable subset of
+  `kitchen-sink.tsp` — `kitchen-sink.tsp` itself is untouched, still M2's/M5d's fixture) now
+  parses with zero `PsiErrorElement`s. New tests: 14 `TypeSpecParsingTest` golden-tree
+  fixtures plus `KitchenSinkCore` (all goldens manually reviewed per ADR 0006 D8), and 7 new
+  `TypeSpecPsiContractTest` methods (own `ContractFixtureM5c.tsp`, M5b's `ContractFixture.tsp`
+  untouched). All M5b goldens/tests unchanged.
+

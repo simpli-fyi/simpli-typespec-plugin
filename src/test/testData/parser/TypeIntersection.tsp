@@ -1,0 +1,1 @@
+alias I = Foo & Bar;

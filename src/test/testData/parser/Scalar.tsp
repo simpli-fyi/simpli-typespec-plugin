@@ -1,0 +1,1 @@
+scalar CustomStr extends string;

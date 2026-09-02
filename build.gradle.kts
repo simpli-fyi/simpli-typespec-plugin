@@ -64,6 +64,12 @@ dependencies {
         intellijIdeaCommunity("2025.2.6.3")
         testFramework(TestFrameworkType.Platform)
 
+        // M5c (plan 03; ADR 0006 F10): `spellchecker.support` lives in the bundled
+        // `intellij.spellchecker` module (`com.intellij.modules.spellchecker` in plugin.xml's
+        // second <depends>) — CE-confirmed against IC-252.28539.97's product-info.json. Needed
+        // on the compile classpath for `SpellcheckingStrategy`/`Tokenizer`/`TokenizerBase`.
+        bundledModule("intellij.spellchecker")
+
         // ADR 0006 D1/F2: Grammar-Kit + JFlex generator tooling, resolved via IPGP's
         // Dependencies Extension helpers rather than the retired hand-rolled `jflex`
         // Configuration.

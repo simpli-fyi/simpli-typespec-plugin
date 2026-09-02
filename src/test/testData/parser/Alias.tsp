@@ -1,0 +1,1 @@
+alias Greeting = "hi";
