@@ -1,6 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
-import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -44,12 +43,3 @@ intellijPlatform {
     }
 }
 
-tasks.withType<VerifyPluginTask>().configureEach {
-    // The Plugin Verifier's "TemplateWordInPluginId" check flags any id containing the
-    // word "intellij" as a Marketplace naming-policy violation. Our id
-    // (dev.tsp.intellij.typespec, see ADR 0002 D5) is a proposed value pending owner
-    // ratification and is not being published to the Marketplace in this milestone (ADR
-    // 0002 D7 defers publishing). Muting only this specific, documented, non-functional
-    // policy check so a real compatibility problem cannot hide behind it.
-    freeArgs.set(listOf("-mute", "TemplateWordInPluginId"))
-}
