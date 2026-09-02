@@ -10,11 +10,18 @@
 
     <depends>com.intellij.modules.platform</depends>
 
+    <resource-bundle>messages.TypeSpecBundle</resource-bundle>
+
     <extensions defaultExtensionNs="com.intellij">
         <fileType name="TypeSpec"
                   implementationClass="dev.tsp.intellij.typespec.TypeSpecFileType"
                   fieldName="INSTANCE"
                   language="TypeSpec"
                   extensions="tsp"/>
+        <lang.syntaxHighlighterFactory
+                language="TypeSpec"
+                implementationClass="dev.tsp.intellij.typespec.highlighting.TypeSpecSyntaxHighlighterFactory"/>
+        <colorSettingsPage
+                implementation="dev.tsp.intellij.typespec.highlighting.TypeSpecColorSettingsPage"/>
     </extensions>
 </idea-plugin>
