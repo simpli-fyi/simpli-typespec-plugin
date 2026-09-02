@@ -309,8 +309,10 @@ IdeActions.ACTION_COMMENT_LINE / ACTION_COMMENT_BLOCK)` with before/after fixtur
    it *is* in Community (`IC/lib/modules/intellij.spellchecker.jar`, EP `spellchecker.support`)
    but lives in module `com.intellij.modules.spellchecker`, needing a **second `<depends>`**.
    That is a CE-available platform module, not an Ultimate dependency — a deliberate,
-   documented exception to the one-`<depends>` rule, pre-approved in ADR 0003 D3 and pending
-   owner ratification. Deferred to M5 with the feature itself.
+   documented exception to the one-`<depends>` rule. ✅ **Owner-ratified 2026-09-02 and
+   CE-availability re-verified directly against the pinned `IC-252.28539.97`**
+   ([ADR 0003](../adr/0003-parser-definition-timing.md) D3 CLOSED,
+   [ADR 0006](../adr/0006-grammar-toolchain.md) F10). Deferred to **M5c** with the feature itself.
 3. Correct EP for TODO highlighting in a lexer-only language. Note that once M5 registers a
    `ParserDefinition`, its `getCommentTokens()` starts feeding TODO indexing for free — so if
    this turns out to be awkward here, deferring it to M5 is cheap.
@@ -369,7 +371,7 @@ run.
 
 | | Scope |
 |---|---|
-| **M5a** | IPGP `2.16.0 → 2.18.1`; apply `org.jetbrains.intellij.platform.grammarkit`; migrate the hand-rolled JFlex `JavaExec` to `generateLexer`; add `generateParser`; bridge M2's `TypeSpecTokenTypes` into the BNF via `tokenTypeFactory`; spike `mixin=`. **No TypeSpec grammar.** ([ADR 0006](../adr/0006-grammar-toolchain.md)) |
+| **M5a** | IPGP `2.16.0 → 2.18.1` (**ratified**); apply `org.jetbrains.intellij.platform.grammarkit`; migrate the hand-rolled JFlex `JavaExec` to `generateLexer`; add `generateParser` (**ADR 0006 D2's explicit wiring — `srcDir(taskProvider)` is broken on 2.18.1, F9**); bridge M2's `TypeSpecTokenTypes` into the BNF via `tokenTypeFactory`; verify the Kotlin-mixin/generated-Java seam (**the `mixin=` spike is cancelled — D7 is decided**). **No TypeSpec grammar.** ([ADR 0006](../adr/0006-grammar-toolchain.md)) |
 | **M5b** | Grammar for file / `import` / `using` / `namespace` / `model`. `TypeSpecIdentifier` + `TypeSpecQualifiedName`. Every declaration a `PsiNameIdentifierOwner` with correct `getTextOffset()`. `TypeSpecFile` accessors. Swap `createParser`/`createElement`; **delete `TypeSpecFlatParser`**. ([ADR 0004](../adr/0004-reference-resolution-approach.md) D7) |
 | **M5c** | `op`, `interface`, `enum`, `union`, `alias`, `scalar`, decorator applications, type expressions. Spellchecking tail. `kitchen-sink.tsp` parses with zero `PsiErrorElement`. |
 
@@ -411,8 +413,10 @@ accessors. All four are now binding requirements of M5b with their own acceptanc
 **Tail task — spellchecking**, moved here from M4 (ADR 0003 D3), lands in **M5c**.
 `TypeSpecSpellcheckingStrategy` on EP `spellchecker.support`, plus a **second `<depends>` on
 `com.intellij.modules.spellchecker`**. That is a CE-available platform module, not an Ultimate
-dependency; it is the one sanctioned exception to the one-`<depends>` rule and **needs owner
-ratification before `tsp-dev` writes it**. If unratified when M5c starts, ship M5c without it.
+dependency; it is the one sanctioned exception to the one-`<depends>` rule and is ✅
+**owner-ratified and CE-confirmed** ([ADR 0003](../adr/0003-parser-definition-timing.md) D3,
+[ADR 0006](../adr/0006-grammar-toolchain.md) F10). `tsp-dev` writes it in M5c without further
+ratification. The plugin then ships exactly **two** `<depends>`; a third needs a new ADR.
 
 **Grammar coverage** — **do not attempt all of TypeSpec.** Explicitly deferred: projections,
 `dec`/`fn`/`extern` declarations, value literals (`#{}`/`#[]`) beyond a coarse rule.

@@ -2,6 +2,7 @@
 
 - Status: **Accepted, partially superseded by [ADR 0005](0005-minimal-parser-definition-for-commenting.md)**
   — F5's `lang.commenter` row is **factually wrong**; D1/D2/D5 are amended there. F1–F4 stand.
+  **D3's open question is CLOSED/CONFIRMED as of 2026-09-02** — see the note under D3.
 - Date: 2026-09-02
 - Deciders: `tsp-architect` (proposed), project owner (to ratify)
 - Relates to: [ADR 0001](0001-highlighting-approach.md) (staged approach: lexer first,
@@ -149,6 +150,25 @@ second `<depends>` on `com.intellij.modules.spellchecker` is pre-approved as an 
 subject to `./gradlew verifyPlugin` staying clean and the plugin still resolving on a bare IC
 install.
 
+> ✅ **CLOSED / CONFIRMED (2026-09-02).** This ADR's open question 1 is resolved twice over:
+> (a) **CE availability is verified**, not inferred — `IC-252.28539.97`'s `product-info.json`
+> lists the module, and its own descriptor
+> (`lib/modules/intellij.spellchecker.jar!/intellij.spellchecker.xml`) declares **only**
+> `intellij.platform.*` and bundled-library dependencies, with no Ultimate dependency
+> anywhere. The `spellchecker.support` EP is `dynamic="true"` (no restart needed).
+> See [ADR 0006](0006-grammar-toolchain.md) F10.
+> (b) **The project owner has explicitly approved the second `<depends>`**, conditioned on
+> exactly the CE availability that (a) confirms.
+>
+> The plugin therefore ships **two** `<depends>`: `com.intellij.modules.platform` and
+> `com.intellij.modules.spellchecker`. This is the *only* sanctioned exception to the
+> one-`<depends>` rule; anything further is a new ADR.
+>
+> **Scheduled in M5c** ([plan 03](../plans/03-grammar-and-psi.md) § M5c, "Spellchecking
+> tail"), which is where a real PSI tree first exists for the strategy to walk. The gating
+> language in that plan section is lifted. The `verifyPlugin`-clean and bare-IC-`runIde`
+> conditions above are **retained as acceptance criteria**, not as approval conditions.
+
 **D4. Test guidance is corrected now, retroactively.** `checkHighlighting` and
 `EditorTestUtil.testFileSyntaxHighlighting` are **banned** from this codebase for as long as
 there is no `ParserDefinition`. `tsp-tester` uses `EditorHighlighterFactory` +
@@ -190,9 +210,11 @@ All against ideaIC-2025.2.6.3 (build 252.28539.97) / matching `intellij-communit
 
 ## Open questions for the project owner
 
-1. Ratify the second `<depends>` on `com.intellij.modules.spellchecker` in M5 (D3). If the
-   one-`<depends>` rule is meant literally, spellchecking is dropped entirely — say so and
-   this ADR is amended.
+1. ~~Ratify the second `<depends>` on `com.intellij.modules.spellchecker` in M5 (D3).~~
+   ✅ **CLOSED 2026-09-02 — CONFIRMED.** Owner approved, conditioned on Community
+   availability; Community availability then verified directly against the pinned
+   `IC-252.28539.97` distribution ([ADR 0006](0006-grammar-toolchain.md) F10). Lands in M5c.
 2. `BraceHighlightingHandler` on plain-text PSI is unverified (D5). If a definitive answer is
    wanted before M4 starts rather than a `runIde` check after, that is another
-   `tsp-intellij-researcher` round.
+   `tsp-intellij-researcher` round. *(Moot in practice: M4 shipped green and M5b gives the
+   handler a real PSI tree regardless.)*

@@ -13,9 +13,21 @@ baseline; **D6 superseded by ADR 0006**).
 Prerequisite: **M4b green** — `ce92694`, 96 tests passing, `build test verifyPlugin` clean.
 
 Package root: `simpli.fyi.plugins.typespec`. Kotlin, JDK 21, IntelliJ IDEA Community
-2025.2.6.3 on the compile classpath. **One `<depends>`**, unchanged
-([ADR 0006](../adr/0006-grammar-toolchain.md) F4) — the spellchecking second `<depends>` in
-M5c is the one sanctioned exception and is **gated on owner ratification**.
+2025.2.6.3 on the compile classpath. **The grammar work adds no `<depends>`**
+([ADR 0006](../adr/0006-grammar-toolchain.md) F4). The **second `<depends>` on
+`com.intellij.modules.spellchecker` in M5c is now RATIFIED and CE-CONFIRMED** — the owner
+approved it and Community availability was verified against the pinned distribution
+([ADR 0003](../adr/0003-parser-definition-timing.md) D3,
+[ADR 0006](../adr/0006-grammar-toolchain.md) F10). It is no longer gated.
+
+> **Revision 2 (2026-09-02) — read this before starting M5a.** Two things changed after
+> commit `3733d52`:
+> 1. **The M5a `mixin=` spike is cancelled.** ADR 0006 D7 is now a *decided* design:
+>    `mixin=` (base class) + `implements=` (hand-written interface), with `methods=[...]`
+>    and `psiImplUtilClass` **banned**. Revision 1's "`psiImplUtilClass` fallback" was based
+>    on a wrong claim and is void. ADR 0004 D2's per-element `CachedValue` survives intact.
+> 2. **The Gradle wiring changed.** `srcDir(taskProvider)` does not work on IPGP 2.18.1
+>    (ADR 0006 F9). Use ADR 0006 D2's explicit recipe verbatim.
 
 **Deliverable in one sentence:** `.tsp` files parse into a real, named, error-tolerant PSI
 tree, replacing M4b's flat leaf stream.
@@ -56,15 +68,16 @@ than after a stall:
 1. The toolchain change (ADR 0006) touches `settings.gradle.kts`, `build.gradle.kts` and
    M2's shipped `TypeSpecTokenTypes` — none of which is grammar work, all of which can fail
    for build reasons alone.
-2. ADR 0006 F8's `mixin=` unknown is **blocking for the grammar's architecture**. Discovering
-   it mid-grammar means unwinding ~12 rules' worth of decisions.
+2. ADR 0006 F8's `mixin=` question was **blocking for the grammar's architecture**. It is now
+   answered (revision 2) — but the answer arrived by research, and M5a still owns proving the
+   toolchain end-to-end before ~12 rules depend on it.
 3. A grammar covering all of `model`/`op`/`interface`/`enum`/`union`/`alias`/`scalar`/
    decorators/type-expressions plus the ADR 0004 D7 contract plus goldens for each is well
    past one `tsp-dev` run.
 
 | Milestone | Scope | One `tsp-dev` run? |
 |---|---|---|
-| **M5a** | Toolchain: IPGP bump, GrammarKit subplugin, lexer task migration, `tokenTypeFactory` bridge, `mixin=` spike, one throwaway rule proving generation end-to-end. **No TypeSpec grammar.** | Yes |
+| **M5a** | Toolchain: IPGP bump, GrammarKit subplugin, lexer task migration, `tokenTypeFactory` bridge, one throwaway rule proving generation *and* the Kotlin-mixin/generated-Java seam end-to-end. **No TypeSpec grammar.** | Yes |
 | **M5b** | Core grammar: file / `import` / `using` / `namespace` / `model`, plus `TypeSpecIdentifier`, `TypeSpecQualifiedName` and the full ADR 0004 D7 named-element contract. Swap `createParser`/`createElement`. | Yes |
 | **M5c** | Remaining grammar: `op`, `interface`, `enum`, `union`, `alias`, `scalar`, decorator applications, type expressions. Spellchecking tail. | Yes |
 
@@ -76,39 +89,48 @@ same shape. M5b is where the PSI contract that M5.5, M6 and M6.5 all build on ge
 ### M5a — Grammar-Kit toolchain and the token bridge
 
 **Goal.** `./gradlew generateParser` runs, emits Java into a source root, compiles against
-our existing token types, and the whole existing test suite is still green. Nothing about
-TypeSpec's actual syntax is decided.
+our existing token types **and against a Kotlin mixin base class**, and the whole existing
+test suite is still green. Nothing about TypeSpec's actual syntax is decided.
 
 **Files**
 ```
-settings.gradle.kts                                                   (modify — IPGP 2.16.0 → 2.18.1)
-build.gradle.kts                                                      (modify — grammarkit subplugin; grammarKit()+jflex(); replace the hand-rolled JavaExec)
-src/main/grammars/TypeSpec.bnf                                        (create — header + ONE throwaway rule)
+settings.gradle.kts                                                   (modify — IPGP 2.16.0 → 2.18.1; RATIFIED)
+build.gradle.kts                                                      (modify — grammarkit subplugin; grammarKit()+jflex(); replace the hand-rolled JavaExec; ADR 0006 D2 wiring VERBATIM)
+src/main/grammars/TypeSpec.bnf                                        (create — header + ONE throwaway rule with mixin= + implements=)
 src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecTokenTypes.kt (modify — fromNameOrText factory + key map)
 src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecElementType.kt (create — IElementType subclass for composites)
-docs/adr/0006-grammar-toolchain.md                                    (modify — record the D7 spike outcome)
+src/test/kotlin/.../TypeSpecTokenTypeFactoryTest.kt                   (create — tsp-tester)
+docs/adr/0006-grammar-toolchain.md                                    (modify — ONLY if D10's empirical checks contradict the ADR)
 ```
 Not modified: `_TypeSpecLexer.flex`, `TypeSpecLexerAdapter`, `TypeSpecParserDefinition`,
 `TypeSpecFlatParser`, `plugin.xml`. **M5a ships with the flat parser still wired in.**
 
 **Approach**
 
-1. **Bump IPGP to 2.18.1** ([ADR 0006](../adr/0006-grammar-toolchain.md) D3) and run
-   `./gradlew clean build test verifyPlugin` **before touching anything else**. Commit this
-   alone if it is green. If it is red, stop and report — do not proceed onto a broken base.
+1. **Bump IPGP to 2.18.1** ([ADR 0006](../adr/0006-grammar-toolchain.md) D3 — **owner-ratified,
+   no longer gated**) and run `./gradlew clean build test verifyPlugin` **before touching
+   anything else**. Commit this alone if it is green. If it is red, stop and report — do not
+   proceed onto a broken base.
 2. Apply `id("org.jetbrains.intellij.platform.grammarkit")`; add `grammarKit()` and `jflex()`
    inside the `intellijPlatform { }` dependencies block; delete the `val jflex: Configuration`,
    the `generateTypeSpecLexer` `JavaExec` task and ADR 0002 D6's comment block.
-3. Configure `generateLexer` (source `src/main/grammars/_TypeSpecLexer.flex`, root
-   `build/generated/sources/grammarkit-lexer/java/main`) and `generateParser` (source
-   `src/main/grammars/TypeSpec.bnf`, root `build/generated/sources/grammarkit-parser/java/main`,
-   `pathToParser = "simpli/fyi/plugins/typespec/parser/TypeSpecParser.java"`,
-   `pathToPsiRoot = "simpli/fyi/plugins/typespec/psi"`). **Disjoint roots**
-   ([ADR 0006](../adr/0006-grammar-toolchain.md) D2). Wire both into
-   `sourceSets.main.java.srcDir(...)` and keep the explicit
-   `tasks.named("compileKotlin") { dependsOn(...) }`.
-   If the typed `tasks.named<GenerateLexerTask>` form will not resolve, use the untyped form
-   and **report which was needed** (ADR 0006 open question 4).
+3. Configure both tasks **exactly as [ADR 0006](../adr/0006-grammar-toolchain.md) D2 specifies
+   — copy that snippet, do not paraphrase it.** The three things that will silently break the
+   build if you deviate:
+   - `generateParser` needs **`pathToParser` AND `pathToPsiRoot` together**; setting one is a
+     configuration error.
+   - `generateLexer` uses **`pathToClass`** (not `targetOutputDir`).
+   - Source roots must be registered as
+     `java.srcDir(tasks.generateX.flatMap { it.targetRootOutputDir })` and **each compile task
+     needs an explicit `dependsOn(tasks.generateLexer, tasks.generateParser)`**.
+     `srcDir(taskProvider)` registers **nothing** on 2.18.1, and `.flatMap` carries **no**
+     implicit task dependency, because `targetRootOutputDir` is `@Internal` on this version
+     ([ADR 0006](../adr/0006-grammar-toolchain.md) F9, IPGP #2186). Omitting the `dependsOn`
+     yields a build that passes warm and fails from `clean` — the worst possible failure mode.
+   Roots stay **disjoint** ([ADR 0006](../adr/0006-grammar-toolchain.md) D2).
+   The typed `tasks.named<GenerateParserTask>` form **does** resolve; FQCN package is
+   `org.jetbrains.intellij.platform.gradle.tasks`
+   ([ADR 0006](../adr/0006-grammar-toolchain.md) F12).
 4. **`TypeSpec.bnf` header** per ADR 0006 D5 and the researcher's verified attribute table:
    `parserClass`, `parserUtilClass="com.intellij.lang.parser.GeneratedParserUtilBase"`,
    `extends="com.intellij.extapi.psi.ASTWrapperPsiElement"`, `psiClassPrefix="TypeSpec"`,
@@ -120,7 +142,9 @@ Not modified: `_TypeSpecLexer.flex`, `TypeSpecLexerAdapter`, `TypeSpecParserDefi
    and **`generateTokenAccessors=true`** (its default is `false` — this is the documented
    first-day surprise; we want token accessors on the PSI interfaces).
    `elementTypeHolderClass` **must not** be `TypeSpecElementTypes` — that name is taken by
-   M4b's hand-written file-element holder and the two must not collide.
+   M4b's hand-written file-element holder. `TypeSpecTypes` is Grammar-Kit's own `<Lang>Types`
+   convention and the two coexisting is normal, not a smell
+   ([ADR 0006](../adr/0006-grammar-toolchain.md) F11).
 5. **`tokens=[...]`** listing every token the grammar will reference, mapped to the exact
    names/texts `fromNameOrText` accepts. Start with only what the throwaway rule needs.
 6. **`fromNameOrText`** on `TypeSpecTokenTypes`: `@JvmStatic`, backed by a map registering
@@ -129,12 +153,25 @@ Not modified: `_TypeSpecLexer.flex`, `TypeSpecLexerAdapter`, `TypeSpecParserDefi
    Existing constants get `@JvmField` if they do not have it. Do not change any existing
    token's identity or debug name — `TypeSpecLexerTest` and `TypeSpecSyntaxHighlighterTest`
    must pass **unedited**.
-7. **The `mixin=` spike** ([ADR 0006](../adr/0006-grammar-toolchain.md) D7, F8). One
-   throwaway rule with `mixin("throwaway")="…"` pointing at a trivial abstract class
-   extending `ASTWrapperPsiElement`. Run `./gradlew generateParser`. Confirm the generated
-   `*Impl` extends the mixin rather than `ASTWrapperPsiElement`. **Record the result as an
-   amendment to ADR 0006 D7**, and if it fails, note ADR 0004 D2's narrowed caching story.
-   Then delete the throwaway rule's mixin wiring if unused — but keep the finding.
+7. **The mixin seam check — not a spike, a verification.**
+   ([ADR 0006](../adr/0006-grammar-toolchain.md) D7, D10.1, F8.) The design is decided; what
+   M5a proves is that the *build* supports it. The throwaway rule carries **both**:
+   ```
+   mixin("throwaway")      = "simpli.fyi.plugins.typespec.psi.impl.TypeSpecThrowawayMixin"
+   implements("throwaway") = "simpli.fyi.plugins.typespec.psi.TypeSpecThrowawayIface"
+   ```
+   where the mixin is a **Kotlin** abstract class extending `ASTWrapperPsiElement` that
+   implements a trivial method of the hand-written **Kotlin** interface *directly on itself*.
+   Run `./gradlew clean build`. Assert:
+   - the generated `TypeSpecThrowawayImpl` **extends the Kotlin mixin**, not `ASTWrapperPsiElement`;
+   - the generated **Java** compiles against the **Kotlin** mixin and interface in the same
+     source set (ADR 0006 D10.1 — the one genuinely unverified thing in this milestone);
+   - **no `methods=[...]` and no `psiImplUtilClass` appear anywhere in the `.bnf`.** They
+     resolve via Grammar-Kit's `AsmHelper` against the generator's classpath, which cannot
+     contain classes this build has not compiled yet (ADR 0006 F8). They are **banned**.
+   If the Kotlin↔Java seam fails, **stop and report** — it invalidates ADR 0006 D7 and needs
+   an ADR revision, not a workaround. Keep the throwaway rule and its mixin wiring until M5b
+   replaces them with the real `TypeSpecNamedElementMixin`.
 8. Confirm the configuration cache still hits (`./gradlew build` twice; second run reports
    "Reusing configuration cache"). If it does not, report rather than disabling it
    (plan 00 §M0 risk 2).
@@ -147,11 +184,20 @@ Not modified: `_TypeSpecLexer.flex`, `TypeSpecLexerAdapter`, `TypeSpecParserDefi
   throws. This is the test that makes ADR 0006 D5's failure mode impossible.
 - The **entire existing suite passes with zero edits to any existing test file.** If a test
   needed editing, that is a regression in M5a, not a test update. Report it.
-- Assert by inspection and record verbatim: `plugin.xml` still has exactly one `<depends>`;
+- Assert by inspection and record verbatim: `plugin.xml` still has exactly one `<depends>`
+  (the spellchecker one arrives in M5c, not here);
   `grep -ri "modules.ultimate\|platform.lsp\|NodeJS\|JavaScript" src/ build.gradle.kts
   settings.gradle.kts` is empty.
 - `git status` shows nothing generated under `src/` — generation lands under `build/`
   ([ADR 0006](../adr/0006-grammar-toolchain.md) D4).
+- **Clean-build determinism.** `./gradlew clean build` must pass **from cold**, not just
+  incrementally. This is the assertion that catches a missing `dependsOn`
+  ([ADR 0006](../adr/0006-grammar-toolchain.md) F9) — an incremental-only green build hides
+  exactly that bug.
+- **Generated-Java ↔ Kotlin-mixin compilation** succeeds (approach step 7,
+  [ADR 0006](../adr/0006-grammar-toolchain.md) D10.1).
+- The `.bnf` contains **no** `methods=[...]` and **no** `psiImplUtilClass`
+  (`grep -n "methods\s*=\|psiImplUtilClass" src/main/grammars/TypeSpec.bnf` is empty).
 
 **Done when**
 ```bash
@@ -159,14 +205,21 @@ Not modified: `_TypeSpecLexer.flex`, `TypeSpecLexerAdapter`, `TypeSpecParserDefi
 ```
 
 **Risks / open questions**
-- **Owner ratification of the IPGP bump** ([ADR 0006](../adr/0006-grammar-toolchain.md)
-  open question 1). Do not block on it; flag it in the report.
+- **No open questions block M5a.** ADR 0006's four are closed; the IPGP bump is ratified;
+  the `mixin=` gate is closed PASSED. Start immediately.
+- ⚠ **The `@Internal` `targetRootOutputDir` regression** is the highest-risk item
+  ([ADR 0006](../adr/0006-grammar-toolchain.md) F9). Symptom if wired wrong: green warm
+  build, red `clean` build, or "cannot find symbol TypeSpecParser". Follow D2 exactly.
 - The migrated `generateLexer` may emit a byte-different `_TypeSpecLexer.java` than the
   hand-rolled task. `TypeSpecLexerTest` is the guard; if it goes red, **report the diff**,
   do not adjust the test.
-- The `mixin=` spike may fail (F8). That is a *recorded outcome*, not a milestone failure.
-- `elementTypeHolderClass` / `TypeSpecElementTypes` name collision — called out above because
-  it is the kind of thing that produces a baffling compile error at the worst moment.
+- `GenerateLexerTask.pathToClass` vs `targetOutputDir` deprecation status is unverified
+  ([ADR 0006](../adr/0006-grammar-toolchain.md) D10.2). Use `pathToClass`; report any warning.
+- If a released IPGP 2.19.0 restores `rootOutputDirectory` (IPGP #2186) before M5a lands, do
+  **not** wait for it and do **not** switch — D2's form works on every version
+  ([ADR 0006](../adr/0006-grammar-toolchain.md) D10.3).
+- `TypeSpecTypes` / `TypeSpecElementTypes` coexistence — two similarly-named holders is
+  confusing at 5pm; ADR 0006 F11 says which does what.
 
 ---
 
@@ -190,8 +243,8 @@ D7.3).
 ```
 src/main/grammars/TypeSpec.bnf                                            (modify — real rules)
 src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecNamedElement.kt   (create — interface : PsiNameIdentifierOwner)
-src/main/kotlin/simpli/fyi/plugins/typespec/psi/impl/TypeSpecNamedElementMixin.kt (create — IF the M5a spike passed)
-src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecPsiImplUtil.kt    (create — @JvmStatic helpers)
+src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecNamedElementMixin.kt   → psi/impl/ (create — the mixin base class; ADR 0006 D7)
+src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecPsiUtil.kt        (create — plain Kotlin helpers, NOT a psiImplUtilClass)
 src/main/kotlin/simpli/fyi/plugins/typespec/parser/TypeSpecParserDefinition.kt (modify — createParser/createElement)
 src/main/kotlin/simpli/fyi/plugins/typespec/parser/TypeSpecFlatParser.kt  (DELETE)
 src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecFile.kt           (modify — ADR 0004 D7.4 accessors)
@@ -217,9 +270,12 @@ src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecElementTypes.kt   (modif
    important shape decision in the milestone; without per-segment nodes `Foo.Bar` cannot be
    navigated segment by segment and M5.5 is blocked.
 3. **Named-element contract** ([ADR 0004](../adr/0004-reference-resolution-approach.md) D7.2/D7.3).
-   `TypeSpecNamedElement : PsiNameIdentifierOwner`. Every declaration in scope
-   (`namespace`, `model`, model property, template parameter) implements it via `mixin=`
-   (or `implements(...)` + `methods=[...]` if M5a's spike failed):
+   `TypeSpecNamedElement : PsiNameIdentifierOwner`, **hand-written**. Every declaration in
+   scope (`namespace`, `model`, model property, template parameter) gets
+   `mixin("<rule>") = "…psi.impl.TypeSpecNamedElementMixin"` **and**
+   `implements("<rule>") = "…psi.TypeSpecNamedElement"`, with the methods implemented
+   **directly on the mixin class** ([ADR 0006](../adr/0006-grammar-toolchain.md) D7).
+   **No `methods=[...]`. No `psiImplUtilClass`.** Both are banned repo-wide (ADR 0006 F8):
    - `getNameIdentifier()` → the name's `TypeSpecIdentifier` node.
    - `getName()` → its text **with surrounding backticks stripped**.
    - `getTextOffset()` → `nameIdentifier.textRange.startOffset`, so Find Usages, structure
@@ -235,9 +291,10 @@ src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecElementTypes.kt   (modif
 5. **Recovery** per [ADR 0006](../adr/0006-grammar-toolchain.md) D6, from the first rule.
    `pin` on every declaration; `private` zero-length `!(...)` recovery predicates for the
    statement loop and the model-property loop; `'}'` and `';'` in every stop set.
-6. `@JvmStatic` on every `TypeSpecPsiImplUtil` method, `@JvmField` where a Java-visible field
-   is needed — the generated `*Impl` classes are Java
-   ([ADR 0006](../adr/0006-grammar-toolchain.md) D5).
+6. `@JvmStatic` / `@JvmField` on any Kotlin member the generated **Java** touches statically
+   ([ADR 0006](../adr/0006-grammar-toolchain.md) D5). The mixin base classes are ordinary
+   Kotlin classes extended by generated Java — no annotation needed for inherited instance
+   methods, only for statics and fields.
 
 **Acceptance (`tsp-tester`)**
 - `TypeSpecParsingTest : ParsingTestCase("parser", "tsp", TypeSpecParserDefinition())`,
@@ -289,9 +346,10 @@ src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecElementTypes.kt   (modif
   M5b only needs template *parameter lists* on declarations (`model Page<T>`), not template
   *arguments* in type position (`Page<Pet>`) — that is M5c. Deliberate: it keeps the hardest
   ambiguity out of the milestone that fixes the PSI contract.
-- If the M5a spike failed, `psiImplUtilClass` + `methods=[...]` must be repeated on every
-  declaration rule. Mechanical, more verbose, no functional loss in M5b — the loss lands in
-  M5.5's caching ([ADR 0006](../adr/0006-grammar-toolchain.md) D7).
+- If the M5a seam check failed, **M5b does not start** — ADR 0006 D7 needs revising first.
+  There is no longer a `psiImplUtilClass` fallback; revision 1's was based on a wrong claim
+  ([ADR 0006](../adr/0006-grammar-toolchain.md) F8). ADR 0004 D2's per-element `CachedValue`
+  is preserved by the chosen design, so M5.5's caching plan stands unchanged.
 - Backtick stripping in `getName()` is easy to get subtly wrong (`` `foo` `` → `foo`, but a
   bare `foo` must not lose characters). Covered explicitly by `TypeSpecPsiContractTest`.
 - Blockless `namespace Foo;` covering the rest of the file is a scoping oddity that the
@@ -317,18 +375,26 @@ declarations; value literals `#{}` / `#[]` beyond a coarse rule.
 **Files**
 ```
 src/main/grammars/TypeSpec.bnf                                           (modify)
-src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecPsiImplUtil.kt   (modify)
-src/main/kotlin/simpli/fyi/plugins/typespec/spellchecker/TypeSpecSpellcheckingStrategy.kt (create — GATED, see below)
-src/main/resources/META-INF/plugin.xml                                   (modify — spellchecker.support + 2nd <depends>, GATED)
+src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecPsiUtil.kt        (modify)
+src/main/kotlin/simpli/fyi/plugins/typespec/spellchecker/TypeSpecSpellcheckingStrategy.kt (create — RATIFIED, ships)
+src/main/resources/META-INF/plugin.xml                                   (modify — spellchecker.support + 2nd <depends>, RATIFIED)
 ```
 
-**Spellchecking tail — gated, do not write it unratified.** `spellchecker.support` lives in
-`com.intellij.modules.spellchecker`, which needs a **second `<depends>`**. It is CE-available
-(`IC/lib/modules/intellij.spellchecker.jar`), not an Ultimate dependency, and is the one
-sanctioned exception to the one-`<depends>` rule — pre-approved in
-[ADR 0003](../adr/0003-parser-definition-timing.md) D3 **and still pending owner
-ratification**. If unratified when M5c starts, **ship M5c without it** and report; do not
-add the `<depends>` on `tsp-architect`'s say-so.
+**Spellchecking tail — ✅ RATIFIED, ships in M5c.** `spellchecker.support` lives in
+`com.intellij.modules.spellchecker` and needs a **second `<depends>`**. Both halves of the
+gate are now cleared:
+- **CE availability CONFIRMED** by direct verification against the pinned `IC-252.28539.97` —
+  `product-info.json` lists it, and
+  `lib/modules/intellij.spellchecker.jar!/intellij.spellchecker.xml` declares only
+  `intellij.platform.*` / bundled-library deps, nothing Ultimate
+  ([ADR 0006](../adr/0006-grammar-toolchain.md) F10).
+- **Owner approved it explicitly**, conditioned on exactly that CE availability
+  ([ADR 0003](../adr/0003-parser-definition-timing.md) D3, now CLOSED/CONFIRMED).
+
+The EP is `dynamic="true"`, so no restart is required. This is the **only** sanctioned
+exception to the one-`<depends>` rule — the plugin ships exactly two `<depends>` and a third
+needs a new ADR. `tsp-dev` implements it in M5c without further ratification; the previous
+"if unratified, ship M5c without it" instruction is **withdrawn**.
 
 **Acceptance (`tsp-tester`)**
 - `TypeSpecParsingTest` grows a `.tsp`/`.txt` pair per new area: `Operation`, `Interface`,
@@ -339,9 +405,10 @@ add the `<depends>` on `tsp-architect`'s say-so.
   `src/test/testData/lexer/kitchen-sink.tsp` (copied, not moved; M2's lexer test owns the
   original path). This is M5's real done-signal.
 - `TypeSpecPsiContractTest` extended to every declaration kind added here.
-- If spellchecking shipped: `./gradlew verifyPlugin` stays clean **and** `runIde` on a bare
+- Spellchecking **ships**: `./gradlew verifyPlugin` stays clean **and** `runIde` on a bare
   Community install still loads the plugin. `tsp-tester` reports the verbatim `<depends>`
-  list.
+  list, which must be exactly `com.intellij.modules.platform` +
+  `com.intellij.modules.spellchecker` — no more, no less.
 - Full regression sweep, no edits to M5b's goldens. **A changed M5b golden means M5c
   destabilised the core grammar — report it, do not re-baseline it.**
 
@@ -360,7 +427,7 @@ add the `<depends>` on `tsp-architect`'s say-so.
   in a decorator-application node; it does **not** split it. Splitting is a separate,
   breaking change to M2/M3 tests — [ADR 0004](../adr/0004-reference-resolution-approach.md)
   open question 1, owner's call.
-- Second `<depends>` is unratified (above).
+- ~~Second `<depends>` is unratified.~~ ✅ Ratified and CE-confirmed (above). No longer a risk.
 
 ---
 
