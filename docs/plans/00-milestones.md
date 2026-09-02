@@ -2,7 +2,9 @@
 
 Governing decisions: [ADR 0001](../adr/0001-highlighting-approach.md) (JFlex lexer, parser
 deferred), [ADR 0002](../adr/0002-build-and-platform-baseline.md) (IC 2025.2.6.3, JDK 21,
-Gradle 9.5, IPGP 2.16.0).
+Gradle 9.5, IPGP 2.16.0), [ADR 0003](../adr/0003-parser-definition-timing.md)
+(`ParserDefinition` is M5's first task; no placeholder; spellchecking moves to M5;
+`checkHighlighting` / `EditorTestUtil.testFileSyntaxHighlighting` banned until then).
 
 Conventions used throughout:
 
@@ -20,8 +22,8 @@ Conventions used throughout:
 | M1 | Language + file type | `.tsp` files are recognised as a TypeSpec language file with an icon. |
 | M2 | Token types + JFlex lexer | A generated, restartable lexer turns TypeSpec source into the full token set. |
 | M3 | Syntax highlighter + colour settings | Tokens are coloured, and the colours are user-configurable. **← primary deliverable ships here** |
-| M4 | Editor conveniences | Comment/uncomment, brace matching, quote handling, TODO comments. |
-| M5 | Grammar-Kit parser + PSI | A real parse tree, unlocking everything structural. |
+| M4 | Editor conveniences | Comment/uncomment, brace matching, quote handling, TODO comments. Spellchecking moved to M5 (ADR 0003). |
+| M5 | Grammar-Kit parser + PSI | A real parse tree, unlocking everything structural. Opens with the `ParserDefinition` (ADR 0003 D1). |
 | M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. |
 | M7 | Compatibility + release readiness | Verified across the whole supported IDE range; CI green; metadata complete. |
 
@@ -119,7 +121,10 @@ src/main/resources/META-INF/plugin.xml            (modify)
 
 **Acceptance.** `TypeSpecFileTypeTest`:
 - `FileTypeManager.getInstance().getFileTypeByExtension("tsp")` is `TypeSpecFileType.INSTANCE`.
-- `myFixture.configureByText("a.tsp", "")`'s `file.language` is `TypeSpecLanguage.INSTANCE`.
+- `myFixture.configureByText("a.tsp", "")` → `file.virtualFile.fileType` is
+  `TypeSpecFileType.INSTANCE` and `file.viewProvider.baseLanguage` is `TypeSpecLanguage.INSTANCE`.
+  **Not** `file.language` / `file.fileType` — those are plain text until M5 by design
+  ([ADR 0003](../adr/0003-parser-definition-timing.md) F1).
 - `TypeSpecFileType.INSTANCE.defaultExtension == "tsp"` and `icon != null`.
 
 **Verification**
@@ -200,8 +205,11 @@ src/main/resources/META-INF/plugin.xml                       (modify)
   actually return, and vice versa — the two sets are equal.
 - `TypeSpecColorSettingsPage.getHighlighter()` is a `TypeSpecSyntaxHighlighter`, and its
   demo text lexes to EOF with no `BAD_CHARACTER`.
-- `TypeSpecHighlightingTest.testBasic()` — `myFixture.configureByFile("highlighting/basic.tsp")`
-  then `checkHighlighting(false, false, false)` passes (no errors reported by the platform).
+- `TypeSpecHighlightingTest.testBasic()` — `myFixture.configureByFile("highlighting/basic.tsp")`,
+  then drive `EditorHighlighterFactory.getInstance().createEditorHighlighter(virtualFile, scheme, project)`
+  and iterate. **Do not use `checkHighlighting` or `EditorTestUtil.testFileSyntaxHighlighting`** —
+  both are vacuous or silently wrong without a `ParserDefinition`
+  ([ADR 0003](../adr/0003-parser-definition-timing.md) F3/D4, detail in plan 01 §M3).
 
 **Verification**
 ```bash
@@ -223,14 +231,17 @@ flat — open cosmetic question in plan 01.
 **In scope**
 - `TypeSpecCommenter : Commenter` — `//`, `/* */`. EP `lang.commenter`.
 - `TypeSpecBraceMatcher : PairedBraceMatcher` for `{}`, `()`, `[]`. EP `lang.braceMatcher`.
-- `TypeSpecQuoteHandler : SimpleTokenSetQuoteHandler`. EP `lang.quoteHandler`.
+  Ships **at risk** — see risk 1 below.
+- `TypeSpecQuoteHandler : SimpleTokenSetQuoteHandler`. EP `lang.quoteHandler`. Verified to
+  work without a `ParserDefinition` (ADR 0003 F5).
 - TODO/comment indexing so `// TODO` shows up: verify whether this needs
   `IdIndexer`/`TodoIndexer` registration or comes free from the syntax highlighter's
   comment token set.
-- `SpellcheckingStrategy` **only if** it is available in `com.intellij.modules.platform`
-  without an extra `<depends>` — otherwise drop it.
 
-**Out of scope.** Folding (wants PSI → M6).
+**Out of scope.** Folding (wants PSI → M6). **Spellchecking — moved to M5**
+([ADR 0003](../adr/0003-parser-definition-timing.md) D3): the inspection walks PSI, so it is
+useless before a `ParserDefinition` exists. **No `ParserDefinition`, placeholder or
+otherwise, is added in M4** (ADR 0003 D1/D2) — nothing else here needs one.
 
 **Files**
 ```
@@ -249,12 +260,27 @@ IdeActions.ACTION_COMMENT_LINE / ACTION_COMMENT_BLOCK)` with before/after fixtur
 ./gradlew build test verifyPlugin
 ```
 
-**Risks / open questions — resolve with `tsp-intellij-researcher` before starting**
-1. Do `lang.braceMatcher` / `lang.quoteHandler` function without a registered
-   `ParserDefinition`? If either silently requires PSI, move it into M5 and ship only the
-   commenter here.
-2. Is `SpellcheckingStrategy` in the platform module or in a separate bundled plugin?
-3. Correct EP for TODO highlighting in a lexer-only language.
+**Risks / open questions**
+
+1. **Brace matching is likely-but-not-proven** without a `ParserDefinition`
+   ([ADR 0003](../adr/0003-parser-definition-timing.md) F5/D5).
+   `BraceMatchingUtil.getBraceMatcher` keys off `IElementType.getLanguage()` from the lexer's
+   tokens and resolves via `LanguageBraceMatching.forLanguage` *before* the FileType
+   fallback — so it should work, **but only if every `IElementType` in `TypeSpecTokenTypes`
+   is constructed with `TypeSpecLanguage.INSTANCE`**; `tsp-dev` must confirm that. Whether
+   `BraceHighlightingHandler` early-returns on plain-text PSI could not be verified.
+   Mitigation: `tsp-tester` checks it manually in `runIde`. If the brace does not light up,
+   **keep the class registered** and record "activates in M5" — do not remove it, and do not
+   add a `ParserDefinition` to force it.
+2. ~~Is `SpellcheckingStrategy` in the platform module or a bundled plugin?~~ **Resolved:**
+   it *is* in Community (`IC/lib/modules/intellij.spellchecker.jar`, EP `spellchecker.support`)
+   but lives in module `com.intellij.modules.spellchecker`, needing a **second `<depends>`**.
+   That is a CE-available platform module, not an Ultimate dependency — a deliberate,
+   documented exception to the one-`<depends>` rule, pre-approved in ADR 0003 D3 and pending
+   owner ratification. Deferred to M5 with the feature itself.
+3. Correct EP for TODO highlighting in a lexer-only language. Note that once M5 registers a
+   `ParserDefinition`, its `getCommentTokens()` starts feeding TODO indexing for free — so if
+   this turns out to be awkward here, deferring it to M5 is cheap.
 
 ---
 
@@ -262,9 +288,32 @@ IdeActions.ACTION_COMMENT_LINE / ACTION_COMMENT_BLOCK)` with before/after fixtur
 
 **Goal.** A parse tree for TypeSpec. This is where ADR 0001's staged plan cashes in.
 
+**Task 0 (first, before any grammar work) — land the `ParserDefinition`.**
+Per [ADR 0003](../adr/0003-parser-definition-timing.md) D1/D2 this was deliberately kept out
+of M4. Register `TypeSpecParserDefinition` (EP `lang.parserDefinition`) with **our own**
+`IFileElementType(TypeSpecLanguage)` and **our own** `TypeSpecFile : PsiFileBase` —
+**never subclass `PlainTextParserDefinition`**, whose `createFile` returns
+`PsiPlainTextFileImpl` and re-triggers the file-type overwrite (ADR 0003 F1/F4).
+
+The moment this lands, three things change and `tsp-tester` must sweep for them:
+- `psiFile.language` / `psiFile.fileType` become correct — the M1 assertions can be
+  *tightened* (they were deliberately written against `virtualFile` / `baseLanguage`, which
+  remain true either way, so nothing breaks).
+- `checkHighlighting` and `EditorTestUtil.testFileSyntaxHighlighting` stop being traps and
+  become usable; the ADR 0003 D4 ban lifts here.
+- `getCommentTokens()` / `getWhitespaceTokens()` start driving TODO indexing, the commenter
+  and whitespace logic. Get those token sets right.
+
 **In scope.** `TypeSpec.bnf`, `generateTypeSpecParser` Gradle task,
 `TypeSpecParserDefinition`, `TypeSpecFile : PsiFileBase`, `TypeSpecElementType`,
 generated parser + PSI into `src/main/gen/` (or `build/generated/`), EP `lang.parserDefinition`.
+
+**Tail task — spellchecking**, moved here from M4 (ADR 0003 D3). `TypeSpecSpellcheckingStrategy`
+on EP `spellchecker.support`, plus a **second `<depends>` on `com.intellij.modules.spellchecker`**
+in `plugin.xml`. This is a CE-available platform module, not an Ultimate dependency; it is the
+one sanctioned exception to the one-`<depends>` rule and **needs owner ratification before
+`tsp-dev` writes it**. Acceptance: `./gradlew verifyPlugin` stays clean and the plugin still
+installs and loads on a bare IntelliJ IDEA Community install.
 
 Grammar coverage, in dependency order — **do not attempt all of TypeSpec**:
 `import` / `using` / `namespace` statements; `model` with properties, `extends`, `is`,
@@ -291,8 +340,10 @@ must not have shifted) and assert no `PsiErrorElement` in `kitchen-sink.tsp`.
 Grammar-Kit external rules or `pin`/recover attributes. Grammar-Kit's Gradle integration has
 the same staleness problem as JFlex (ADR 0002 D6) — plan on a `JavaExec` task, and budget
 this milestone as the largest by a wide margin. **Split it if the first `tsp-dev` run
-stalls**: M5a = `ParserDefinition` + file element + a grammar covering only
-`import`/`using`/`namespace`/`model`; M5b = the rest.
+stalls**: M5a = task 0 (`ParserDefinition` + file element) + a grammar covering only
+`import`/`using`/`namespace`/`model`; M5b = the rest of the grammar plus the spellchecking
+tail. Even in a split, M5a ships a **real** `ParserDefinition` over a partial grammar — never
+a `parseContents`-emits-one-leaf stub as a resting state (ADR 0003 D2).
 
 ---
 

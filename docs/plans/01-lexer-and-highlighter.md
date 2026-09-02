@@ -171,8 +171,16 @@ without checking its licence; note that check in the milestone report.
 
 1. `assertSame(TypeSpecFileType.INSTANCE, FileTypeManager.getInstance().getFileTypeByExtension("tsp"))`
 2. `myFixture.configureByText("demo.tsp", "namespace Demo;")` →
-   `assertEquals(TypeSpecLanguage.INSTANCE, myFixture.file.language)` and
-   `assertEquals(TypeSpecFileType.INSTANCE, myFixture.file.fileType)`
+   `assertSame(TypeSpecFileType.INSTANCE, myFixture.file.virtualFile.fileType)` and
+   `assertSame(TypeSpecLanguage.INSTANCE, myFixture.file.viewProvider.baseLanguage)`
+
+   > **Do not assert `myFixture.file.language` or `myFixture.file.fileType`.** Until a
+   > `ParserDefinition` is registered (M5), those are `PlainTextLanguage` /
+   > `PlainTextFileType` **by design**: `AbstractFileViewProvider.createFile` returns null
+   > with no `ParserDefinition` and falls back to `PsiPlainTextFileImpl`, which
+   > force-overwrites `myFileType`. See [ADR 0003](../adr/0003-parser-definition-timing.md)
+   > F1. The `VirtualFile`'s file type and the view provider's **base** language are the
+   > assertions that stay true across the M5 transition.
 3. `assertEquals("tsp", TypeSpecFileType.INSTANCE.defaultExtension)`
 4. `assertNotNull(TypeSpecFileType.INSTANCE.icon)` — catches a missing/misnamed SVG resource,
    which otherwise fails only at runtime.
@@ -556,10 +564,40 @@ class TypeSpecSyntaxHighlighterFactory : SyntaxHighlighterFactory() {
 `src/test/kotlin/dev/tsp/intellij/typespec/highlighting/TypeSpecHighlightingTest.kt`
 (`BasePlatformTestCase`, `getTestDataPath() = "src/test/testData"`):
 
-7. `myFixture.configureByFile("highlighting/basic.tsp")`;
-   `myFixture.checkHighlighting(false, false, false)` — asserts the platform reports no
-   errors/warnings on a valid file.
+7. **End-to-end editor colouring, via `EditorHighlighterFactory`.**
+   `myFixture.configureByFile("highlighting/basic.tsp")`, then:
+
+   ```kotlin
+   val vFile = myFixture.file.virtualFile
+   val scheme = EditorColorsManager.getInstance().globalScheme
+   val highlighter = EditorHighlighterFactory.getInstance()
+       .createEditorHighlighter(vFile, scheme, project)
+   highlighter.setText(myFixture.editor.document.charsSequence)
+   val it = highlighter.createIterator(0)
+   while (!it.atEnd()) { /* assert it.tokenType / it.textAttributesKeys / ranges */ ; it.advance() }
+   ```
+
+   Assert at minimum: the iterator reaches the end of the document; every non-whitespace
+   token carries a non-empty `textAttributesKeys`; no token is `BAD_CHARACTER`; and a few
+   spot-checked offsets (a keyword, a decorator, a string, a comment) carry the expected
+   `TextAttributesKey`. This is the only test that proves the whole
+   `FileType → SyntaxHighlighterFactory → LexerEditorHighlighter` chain is wired.
+
    Fixture `src/test/testData/highlighting/basic.tsp` = the kitchen sink, no annotation tags.
+
+   > **Two APIs are banned in this milestone** — see
+   > [ADR 0003](../adr/0003-parser-definition-timing.md) F3/D4:
+   >
+   > - **`myFixture.checkHighlighting(...)`** is driven by `HighlightInfo` from annotators
+   >   and inspections. A lexer-only language produces none, so the call is *vacuous*: it can
+   >   never fail and proves nothing about colouring.
+   > - **`EditorTestUtil.testFileSyntaxHighlighting`** — recommended by the SDK docs and
+   >   **actively wrong here**. It resolves the highlighter through `testFile.getFileType()`,
+   >   which is `PlainTextFileType` with no `ParserDefinition` (F1). It would silently use
+   >   `PlainSyntaxHighlighter` and assert against empty output.
+   >
+   > Note the factory call above takes the **`VirtualFile`**, whose `fileType` is still
+   > `TypeSpecFileType`. That is precisely why it works and `EditorTestUtil` does not.
 
 ## Done when
 
@@ -579,10 +617,13 @@ confirm colouring, switch Light ↔ Darcula, confirm no unreadable token, confir
    the external name is permanent, the fallback is not.
 2. `MULTILINE_STRING` falling back to `STRING` is intentional; some languages give
    triple-quoted strings their own key. Revisit after `runIde`.
-3. Whether `checkHighlighting` needs a registered `ParserDefinition` to do anything useful
-   on a lexer-only language is **unverified**. If test 7 turns out to be vacuous, say so in
-   the report and keep it as a smoke test — do not delete it, and do not add a
-   `ParserDefinition` just to make it meaningful (that is M5).
+3. ~~Whether `checkHighlighting` needs a registered `ParserDefinition`.~~ **Resolved** by
+   `tsp-intellij-researcher` against ideaIC-2025.2.6.3 — see
+   [ADR 0003](../adr/0003-parser-definition-timing.md). Summary: editor highlighting works
+   fine with no `ParserDefinition` (the `EditorHighlighterFactory` path never touches PSI),
+   so **M3 ships as-is**; but `checkHighlighting` is vacuous and
+   `EditorTestUtil.testFileSyntaxHighlighting` is silently broken, hence the rewritten
+   acceptance test 7 above. No `ParserDefinition` is added here or in M4; it is M5's first task.
 4. `AttributesDescriptor` display names are user-visible; if the plugin is ever localised
    they must move to a message bundle. M0 deleted the template's bundle; recreating one is
    out of scope here.
