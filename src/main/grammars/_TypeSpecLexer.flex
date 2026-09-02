@@ -1,9 +1,9 @@
-package dev.tsp.intellij.typespec.lexer;
+package simpli.fyi.plugins.typespec.lexer;
 
 import com.intellij.lexer.FlexLexer;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.TokenType;
-import static dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.*;
+import static simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.*;
 
 %%
 

@@ -1,4 +1,4 @@
-package dev.tsp.intellij.typespec.highlighting
+package simpli.fyi.plugins.typespec.highlighting
 
 import com.intellij.openapi.editor.HighlighterColors
 import com.intellij.openapi.editor.colors.TextAttributesKey
@@ -6,10 +6,10 @@ import com.intellij.openapi.fileTypes.SyntaxHighlighterFactory
 import com.intellij.psi.TokenType
 import com.intellij.psi.tree.IElementType
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import dev.tsp.intellij.typespec.TypeSpecLanguage
-import dev.tsp.intellij.typespec.lexer.TypeSpecLexerAdapter
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenType
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes
+import simpli.fyi.plugins.typespec.TypeSpecLanguage
+import simpli.fyi.plugins.typespec.lexer.TypeSpecLexerAdapter
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenType
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes
 
 /**
  * M3 acceptance: [TypeSpecSyntaxHighlighter] and [TypeSpecColorSettingsPage], both as pure

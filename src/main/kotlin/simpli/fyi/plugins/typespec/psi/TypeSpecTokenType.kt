@@ -1,7 +1,7 @@
-package dev.tsp.intellij.typespec.psi
+package simpli.fyi.plugins.typespec.psi
 
 import com.intellij.psi.tree.IElementType
-import dev.tsp.intellij.typespec.TypeSpecLanguage
+import simpli.fyi.plugins.typespec.TypeSpecLanguage
 
 class TypeSpecTokenType(debugName: String) : IElementType(debugName, TypeSpecLanguage.INSTANCE) {
     override fun toString() = "TypeSpec:" + super.toString()

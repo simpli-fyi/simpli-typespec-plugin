@@ -1,4 +1,4 @@
-# TypeSpec (Community)
+# Simpli TypeSpec Highlighter
 
 An IntelliJ plugin providing [TypeSpec](https://typespec.io/) (`.tsp`) syntax highlighting,
 built to run on **IntelliJ IDEA Community Edition** with no Ultimate-only APIs, no LSP, and

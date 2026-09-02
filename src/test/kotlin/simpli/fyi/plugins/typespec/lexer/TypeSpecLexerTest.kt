@@ -1,37 +1,37 @@
-package dev.tsp.intellij.typespec.lexer
+package simpli.fyi.plugins.typespec.lexer
 
 import com.intellij.psi.TokenType
 import com.intellij.psi.tree.IElementType
 import com.intellij.testFramework.LexerTestCase
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.AMP
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.AMP_AMP
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.ARROW
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.AUGMENT_DECORATOR
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.BAR
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.BAR_BAR
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.BLOCK_COMMENT
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.COLON_COLON
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.DECORATOR
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.DIRECTIVE
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.DOC_COMMENT
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.DOT
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.ELLIPSIS
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.EQ_EQ
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.GE
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.HASH_BRACE
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.HASH_BRACKET
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.IDENTIFIER
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.INVALID_ESCAPE
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.KEYWORD
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.LE
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.LINE_COMMENT
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.MINUS
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.MULTILINE_STRING
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.NE
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.NUMBER
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.QUESTION
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.STRING
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.VALID_ESCAPE
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.AMP
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.AMP_AMP
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.ARROW
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.AUGMENT_DECORATOR
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.BAR
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.BAR_BAR
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.BLOCK_COMMENT
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.COLON_COLON
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.DECORATOR
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.DIRECTIVE
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.DOC_COMMENT
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.DOT
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.ELLIPSIS
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.EQ_EQ
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.GE
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.HASH_BRACE
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.HASH_BRACKET
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.IDENTIFIER
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.INVALID_ESCAPE
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.KEYWORD
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.LE
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.LINE_COMMENT
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.MINUS
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.MULTILINE_STRING
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.NE
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.NUMBER
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.QUESTION
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.STRING
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.VALID_ESCAPE
 import java.io.File
 
 /**
@@ -231,17 +231,17 @@ class TypeSpecLexerTest : LexerTestCase() {
         assertTokenTypes(
             "#{ a: 1 }",
             HASH_BRACE,
-            TokenType.WHITE_SPACE, IDENTIFIER, dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.COLON,
+            TokenType.WHITE_SPACE, IDENTIFIER, simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.COLON,
             TokenType.WHITE_SPACE, NUMBER, TokenType.WHITE_SPACE,
-            dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.RBRACE,
+            simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.RBRACE,
         )
     }
 
     fun testHashBracketIsSingleToken() {
         assertTokenTypes(
             "#[1, 2]",
-            HASH_BRACKET, NUMBER, dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.COMMA,
-            TokenType.WHITE_SPACE, NUMBER, dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes.RBRACKET,
+            HASH_BRACKET, NUMBER, simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.COMMA,
+            TokenType.WHITE_SPACE, NUMBER, simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.RBRACKET,
         )
     }
 

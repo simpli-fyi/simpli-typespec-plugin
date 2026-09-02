@@ -1,12 +1,12 @@
-package dev.tsp.intellij.typespec.highlighting
+package simpli.fyi.plugins.typespec.highlighting
 
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.fileTypes.SyntaxHighlighter
 import com.intellij.openapi.options.colors.AttributesDescriptor
 import com.intellij.openapi.options.colors.ColorDescriptor
 import com.intellij.openapi.options.colors.ColorSettingsPage
-import dev.tsp.intellij.typespec.TypeSpecBundle
-import dev.tsp.intellij.typespec.TypeSpecIcons
+import simpli.fyi.plugins.typespec.TypeSpecBundle
+import simpli.fyi.plugins.typespec.TypeSpecIcons
 import javax.swing.Icon
 
 class TypeSpecColorSettingsPage : ColorSettingsPage {

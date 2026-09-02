@@ -154,15 +154,18 @@ currently single-machine. Do **not** change the system default JDK.
 
 ### D5 — Naming
 
+Ratified by the owner on 2026-09-02, to sit alongside the already-released
+`simpli.fyi.plugins.forge.manifest.validator` ("Simpli Forge Manifest Validator").
+
 | Item | Value | Status |
 |---|---|---|
-| Gradle `group` | `dev.tsp.intellij` | proposed (from the bootstrap skill) — **needs owner ratification** |
-| Kotlin package root | `dev.tsp.intellij.typespec` | proposed |
-| `<id>` in `plugin.xml` | `dev.tsp.intellij.typespec` | **needs owner ratification** — a plugin id is permanent once published to the Marketplace |
-| `<name>` | `TypeSpec` | proposed. Note `siketyan`'s plugin already occupies a similar display name on the Marketplace; if we publish, we may need `TypeSpec Language (Community)` or similar |
-| `<vendor>` | **unknown** — needs owner input (name, email, url) | **blocking for publishing only**, not for local builds |
+| Gradle `group` | `simpli.fyi` | **ratified** |
+| Kotlin package root | `simpli.fyi.plugins.typespec` | **ratified** — deliberately forward-domain, not reverse-domain, so the package matches the plugin id and the Forge plugin's id shape |
+| `<id>` in `plugin.xml` | `simpli.fyi.plugins.typespec` | **ratified** — follows `simpli.fyi.plugins.<product>` |
+| `<name>` | `Simpli TypeSpec Highlighter` | **ratified** — the `Simpli <product> <function>` pattern also sidesteps the Marketplace display-name collision with `siketyan`'s plugin |
+| `<vendor>` | `simpli.fyi`, `hello@simpli.fyi`, `https://simpli.fyi` | **ratified** |
 | `version` | `0.0.1` | proposed |
-| Source-set layout | `src/main/kotlin/dev/tsp/intellij/typespec/...`, JFlex spec in `src/main/grammars/`, generated lexer into `build/generated/sources/jflex/` | decided |
+| Source-set layout | `src/main/kotlin/simpli/fyi/plugins/typespec/...`, JFlex spec in `src/main/grammars/`, generated lexer into `build/generated/sources/jflex/` | decided |
 
 ### D6 — Lexer generation: no `org.jetbrains.grammarkit` plugin
 
@@ -193,11 +196,15 @@ should be left in place but never triggered until D5's open items are settled.
 
 ## Open questions for the owner
 
-1. Gradle `group` / plugin `<id>` — ratify `dev.tsp.intellij` / `dev.tsp.intellij.typespec`
-   or supply your own. **Blocks nothing today, but is permanent after first publish.**
-2. `<vendor>` name / email / URL, and `pluginRepositoryUrl`.
-3. Do you intend to publish to the JetBrains Marketplace at all? If yes, the display-name
-   collision with `siketyan/intellij-typespec-plugin` needs resolving.
+1. ~~Gradle `group` / plugin `<id>`~~ — **resolved**, see D5.
+2. ~~`<vendor>` name / email / URL~~ — **resolved**, see D5. `pluginRepositoryUrl` is still unset.
+3. Do you intend to publish to the JetBrains Marketplace at all? The display-name collision
+   with `siketyan/intellij-typespec-plugin` is resolved by the `Simpli` prefix, but D7
+   (publishing) remains deferred.
+
+Note on the plugin id: an earlier id containing the word `intellij` was rejected outright by
+the Plugin Verifier's `TemplateWordInPluginId` check. `simpli.fyi.plugins.typespec` avoids it,
+so no verifier mute is needed.
 4. Is `org.gradle.java.home` acceptable in the committed `gradle.properties` (single-machine
    repo), or should it go in `~/.gradle/gradle.properties`?
 5. Minimum supported IDE: is `252` (2025.2) right, or would you rather start at `253`/`261`

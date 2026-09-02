@@ -6,7 +6,7 @@ Governed by [ADR 0001](../adr/0001-highlighting-approach.md) and
 This plan covers the primary deliverable. It is split into three milestones so each fits one
 `tsp-dev` run. Do not start M2 before M1's test is green; do not start M3 before M2's is.
 
-Package root: `dev.tsp.intellij.typespec`. Kotlin, JDK 21 target, IntelliJ IDEA Community
+Package root: `simpli.fyi.plugins.typespec`. Kotlin, JDK 21 target, IntelliJ IDEA Community
 2025.2.6.3 on the compile classpath.
 
 ---
@@ -117,7 +117,7 @@ nesting rule. `/**/` is an empty block comment, not an unterminated doc comment:
 
 ## Files to create
 
-### `src/main/kotlin/dev/tsp/intellij/typespec/TypeSpecLanguage.kt`
+### `src/main/kotlin/simpli/fyi/plugins/typespec/TypeSpecLanguage.kt`
 `object TypeSpecLanguage : Language("TypeSpec")`, with a `@JvmField val INSTANCE` or the
 Kotlin `object` itself exposed such that `plugin.xml`'s `fieldName="INSTANCE"` resolves.
 Prefer the conventional shape used by JetBrains samples:
@@ -128,7 +128,7 @@ class TypeSpecLanguage private constructor() : Language("TypeSpec") {
 ```
 Override `getDisplayName()` → `"TypeSpec"`.
 
-### `src/main/kotlin/dev/tsp/intellij/typespec/TypeSpecFileType.kt`
+### `src/main/kotlin/simpli/fyi/plugins/typespec/TypeSpecFileType.kt`
 `class TypeSpecFileType private constructor() : LanguageFileType(TypeSpecLanguage.INSTANCE)`
 with `companion object { @JvmStatic val INSTANCE = TypeSpecFileType() }`.
 
@@ -138,7 +138,7 @@ with `companion object { @JvmStatic val INSTANCE = TypeSpecFileType() }`.
 - `getIcon()` = `TypeSpecIcons.FILE`
 - `getCharset(file, content)` — leave default; TypeSpec is UTF-8, but do not hard-code.
 
-### `src/main/kotlin/dev/tsp/intellij/typespec/TypeSpecIcons.kt`
+### `src/main/kotlin/simpli/fyi/plugins/typespec/TypeSpecIcons.kt`
 ```kotlin
 object TypeSpecIcons {
     val FILE: Icon = IconLoader.getIcon("/icons/typespec.svg", TypeSpecIcons::class.java)
@@ -156,7 +156,7 @@ without checking its licence; note that check in the milestone report.
 ```xml
 <extensions defaultExtensionNs="com.intellij">
   <fileType name="TypeSpec"
-            implementationClass="dev.tsp.intellij.typespec.TypeSpecFileType"
+            implementationClass="simpli.fyi.plugins.typespec.TypeSpecFileType"
             fieldName="INSTANCE"
             language="TypeSpec"
             extensions="tsp"/>
@@ -166,7 +166,7 @@ without checking its licence; note that check in the milestone report.
 
 ## Acceptance — `tsp-tester` writes
 
-`src/test/kotlin/dev/tsp/intellij/typespec/TypeSpecFileTypeTest.kt`, extends
+`src/test/kotlin/simpli/fyi/plugins/typespec/TypeSpecFileTypeTest.kt`, extends
 `BasePlatformTestCase`:
 
 1. `assertSame(TypeSpecFileType.INSTANCE, FileTypeManager.getInstance().getFileTypeByExtension("tsp"))`
@@ -214,7 +214,7 @@ dependencies { jflex("org.jetbrains.intellij.deps.jflex:jflex:1.10.17") }
 
 val generateTypeSpecLexer by tasks.registering(JavaExec::class) {
     val flexFile = layout.projectDirectory.file("src/main/grammars/_TypeSpecLexer.flex")
-    val outDir   = layout.buildDirectory.dir("generated/sources/jflex/dev/tsp/intellij/typespec/lexer")
+    val outDir   = layout.buildDirectory.dir("generated/sources/jflex/simpli/fyi/plugins/typespec/lexer")
     inputs.file(flexFile)
     outputs.dir(outDir)
     classpath = jflex
@@ -240,7 +240,7 @@ Notes for `tsp-dev`:
   `--skel <path>`. Report which path you took.
 - Add `build/` to `.gitignore` (already there from M0). Never edit the generated `.java`.
 
-## `src/main/kotlin/dev/tsp/intellij/typespec/psi/TypeSpecTokenType.kt`
+## `src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecTokenType.kt`
 
 ```kotlin
 class TypeSpecTokenType(debugName: String) : IElementType(debugName, TypeSpecLanguage.INSTANCE) {
@@ -250,7 +250,7 @@ class TypeSpecTokenType(debugName: String) : IElementType(debugName, TypeSpecLan
 The `toString()` prefix makes `LexerTestCase` output readable and stable — do not omit it,
 the expected strings in M2's tests depend on it.
 
-## `src/main/kotlin/dev/tsp/intellij/typespec/psi/TypeSpecTokenTypes.kt`
+## `src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecTokenTypes.kt`
 
 One `@JvmField val` per row. Complete list, with the exact debug name to use:
 
@@ -290,7 +290,7 @@ One `@JvmField val` per row. Complete list, with the exact debug name to use:
 Whitespace uses `com.intellij.psi.TokenType.WHITE_SPACE`; unmatched input uses
 `com.intellij.psi.TokenType.BAD_CHARACTER`. Do **not** define your own for these.
 
-## `src/main/kotlin/dev/tsp/intellij/typespec/psi/TypeSpecTokenSets.kt`
+## `src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecTokenSets.kt`
 
 ```kotlin
 object TypeSpecTokenSets {
@@ -312,11 +312,11 @@ M3, M4 and M5 all consume these; defining them here avoids duplicating literal l
 
 Header:
 ```
-package dev.tsp.intellij.typespec.lexer;
+package simpli.fyi.plugins.typespec.lexer;
 import com.intellij.lexer.FlexLexer;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.TokenType;
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes;
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes;
 
 %%
 %class _TypeSpecLexer
@@ -374,7 +374,7 @@ Simplification accepted here: emitting one `STRING` token per literal means mult
 strings and unterminated strings re-lex from the start of the literal. That is fine for a
 `FlexAdapter`.
 
-## `src/main/kotlin/dev/tsp/intellij/typespec/lexer/TypeSpecLexerAdapter.kt`
+## `src/main/kotlin/simpli/fyi/plugins/typespec/lexer/TypeSpecLexerAdapter.kt`
 
 ```kotlin
 class TypeSpecLexerAdapter : FlexAdapter(_TypeSpecLexer(null))
@@ -382,7 +382,7 @@ class TypeSpecLexerAdapter : FlexAdapter(_TypeSpecLexer(null))
 
 ## Acceptance — `tsp-tester` writes
 
-`src/test/kotlin/dev/tsp/intellij/typespec/lexer/TypeSpecLexerTest.kt`, extending
+`src/test/kotlin/simpli/fyi/plugins/typespec/lexer/TypeSpecLexerTest.kt`, extending
 `com.intellij.testFramework.LexerTestCase` with `createLexer() = TypeSpecLexerAdapter()` and
 `getDirPath()` unused (inline expected strings).
 
@@ -456,7 +456,7 @@ manually — this is the single most valuable test in the milestone.
 
 **Goal.** Colours on screen, configurable, theme-safe.
 
-## `src/main/kotlin/dev/tsp/intellij/typespec/highlighting/TypeSpecColors.kt`
+## `src/main/kotlin/simpli/fyi/plugins/typespec/highlighting/TypeSpecColors.kt`
 
 Every key is created with `TextAttributesKey.createTextAttributesKey(externalName, fallback)`.
 **Never hard-code RGB.** External names are permanent (they are written into user colour
@@ -535,14 +535,14 @@ class TypeSpecSyntaxHighlighterFactory : SyntaxHighlighterFactory() {
 ```xml
 <lang.syntaxHighlighterFactory
     language="TypeSpec"
-    implementationClass="dev.tsp.intellij.typespec.highlighting.TypeSpecSyntaxHighlighterFactory"/>
+    implementationClass="simpli.fyi.plugins.typespec.highlighting.TypeSpecSyntaxHighlighterFactory"/>
 <colorSettingsPage
-    implementation="dev.tsp.intellij.typespec.highlighting.TypeSpecColorSettingsPage"/>
+    implementation="simpli.fyi.plugins.typespec.highlighting.TypeSpecColorSettingsPage"/>
 ```
 
 ## Acceptance — `tsp-tester` writes
 
-`src/test/kotlin/dev/tsp/intellij/typespec/highlighting/TypeSpecSyntaxHighlighterTest.kt`:
+`src/test/kotlin/simpli/fyi/plugins/typespec/highlighting/TypeSpecSyntaxHighlighterTest.kt`:
 
 1. **Total coverage.** Reflect over `TypeSpecTokenTypes`' fields (or keep an explicit `ALL`
    TokenSet in `TypeSpecTokenSets` and assert against it); for each, assert
@@ -561,7 +561,7 @@ class TypeSpecSyntaxHighlighterFactory : SyntaxHighlighterFactory() {
    reaches EOF with zero `BAD_CHARACTER`, and that every descriptor's key is actually
    produced by some token in it.
 
-`src/test/kotlin/dev/tsp/intellij/typespec/highlighting/TypeSpecHighlightingTest.kt`
+`src/test/kotlin/simpli/fyi/plugins/typespec/highlighting/TypeSpecHighlightingTest.kt`
 (`BasePlatformTestCase`, `getTestDataPath() = "src/test/testData"`):
 
 7. **End-to-end editor colouring, via `EditorHighlighterFactory`.**

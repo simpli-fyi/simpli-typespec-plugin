@@ -1,4 +1,4 @@
-package dev.tsp.intellij.typespec.highlighting
+package simpli.fyi.plugins.typespec.highlighting
 
 import com.intellij.openapi.fileTypes.SyntaxHighlighter
 import com.intellij.openapi.fileTypes.SyntaxHighlighterFactory

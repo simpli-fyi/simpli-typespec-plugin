@@ -8,9 +8,9 @@ Gradle 9.5, IPGP 2.16.0), [ADR 0003](../adr/0003-parser-definition-timing.md)
 
 Conventions used throughout:
 
-- Package root: `dev.tsp.intellij.typespec` (pending ratification, ADR 0002 D5).
-- Source root: `src/main/kotlin/dev/tsp/intellij/typespec/`.
-- Test root: `src/test/kotlin/dev/tsp/intellij/typespec/`, fixtures in `src/test/testData/`.
+- Package root: `simpli.fyi.plugins.typespec` (pending ratification, ADR 0002 D5).
+- Source root: `src/main/kotlin/simpli/fyi/plugins/typespec/`.
+- Test root: `src/test/kotlin/simpli/fyi/plugins/typespec/`, fixtures in `src/test/testData/`.
 - One milestone = one `tsp-dev` run. `tsp-dev` never writes tests; `tsp-tester` never edits
   `src/main/`.
 - **Every milestone ends green on `./gradlew build`.** A milestone that does not compile is
@@ -50,7 +50,7 @@ release.** ADR 0001 accepts that we own a copy of the grammar.
   Remove the corresponding `<extensions>` entries and `<resource-bundle>` from `plugin.xml`.
 - Apply ADR 0002: `intellijIdeaCommunity("2025.2.6.3")`, `sinceBuild = "252"`,
   `untilBuild = provider { null }`, `kotlin { jvmToolchain(21) }`,
-  `org.gradle.java.home` → Zulu 21, `group = dev.tsp.intellij`, `version = 0.0.1`.
+  `org.gradle.java.home` → Zulu 21, `group = simpli.fyi`, `version = 0.0.1`.
 - `plugin.xml`: id / name / vendor / description, `<depends>com.intellij.modules.platform</depends>`
   and nothing else, empty `<extensions>` block.
 - `pluginVerification { ides { ide(IntellijIdeaCommunity, "2025.2.6.3") } }`.
@@ -112,9 +112,9 @@ Detail: [`01-lexer-and-highlighter.md` § M1](01-lexer-and-highlighter.md).
 
 **Files**
 ```
-src/main/kotlin/dev/tsp/intellij/typespec/TypeSpecLanguage.kt
-src/main/kotlin/dev/tsp/intellij/typespec/TypeSpecFileType.kt
-src/main/kotlin/dev/tsp/intellij/typespec/TypeSpecIcons.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/TypeSpecLanguage.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/TypeSpecFileType.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/TypeSpecIcons.kt
 src/main/resources/icons/typespec.svg
 src/main/resources/META-INF/plugin.xml            (modify)
 ```
@@ -154,10 +154,10 @@ Detail: [`01-lexer-and-highlighter.md` § M2](01-lexer-and-highlighter.md).
 ```
 build.gradle.kts                                                (modify — jflex config + JavaExec task)
 src/main/grammars/_TypeSpecLexer.flex
-src/main/kotlin/dev/tsp/intellij/typespec/psi/TypeSpecTokenType.kt
-src/main/kotlin/dev/tsp/intellij/typespec/psi/TypeSpecTokenTypes.kt
-src/main/kotlin/dev/tsp/intellij/typespec/psi/TypeSpecTokenSets.kt
-src/main/kotlin/dev/tsp/intellij/typespec/lexer/TypeSpecLexerAdapter.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecTokenType.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecTokenTypes.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecTokenSets.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/lexer/TypeSpecLexerAdapter.kt
 ```
 
 **Acceptance.** `TypeSpecLexerTest` (extends `LexerTestCase`), one case per row of the token
@@ -191,10 +191,10 @@ Detail: [`01-lexer-and-highlighter.md` § M3](01-lexer-and-highlighter.md).
 
 **Files**
 ```
-src/main/kotlin/dev/tsp/intellij/typespec/highlighting/TypeSpecColors.kt
-src/main/kotlin/dev/tsp/intellij/typespec/highlighting/TypeSpecSyntaxHighlighter.kt
-src/main/kotlin/dev/tsp/intellij/typespec/highlighting/TypeSpecSyntaxHighlighterFactory.kt
-src/main/kotlin/dev/tsp/intellij/typespec/highlighting/TypeSpecColorSettingsPage.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/highlighting/TypeSpecColors.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/highlighting/TypeSpecSyntaxHighlighter.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/highlighting/TypeSpecSyntaxHighlighterFactory.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/highlighting/TypeSpecColorSettingsPage.kt
 src/main/resources/META-INF/plugin.xml                       (modify)
 ```
 
@@ -245,9 +245,9 @@ otherwise, is added in M4** (ADR 0003 D1/D2) — nothing else here needs one.
 
 **Files**
 ```
-src/main/kotlin/dev/tsp/intellij/typespec/editor/TypeSpecCommenter.kt
-src/main/kotlin/dev/tsp/intellij/typespec/editor/TypeSpecBraceMatcher.kt
-src/main/kotlin/dev/tsp/intellij/typespec/editor/TypeSpecQuoteHandler.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/editor/TypeSpecCommenter.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/editor/TypeSpecBraceMatcher.kt
+src/main/kotlin/simpli/fyi/plugins/typespec/editor/TypeSpecQuoteHandler.kt
 src/main/resources/META-INF/plugin.xml   (modify)
 ```
 

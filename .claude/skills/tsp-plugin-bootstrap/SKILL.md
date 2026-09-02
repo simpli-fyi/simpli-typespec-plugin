@@ -54,9 +54,9 @@ plus (added by this project, see §5) `org.gradle.java.home`.
 
 | Key | Where | Value for this project |
 |---|---|---|
-| `group` (gradle.properties) | Gradle group | `dev.tsp.intellij` |
+| `group` (gradle.properties) | Gradle group | `simpli.fyi` |
 | `version` (gradle.properties) | plugin version | `0.0.1` |
-| `<id>` (plugin.xml) | plugin id | `dev.tsp.intellij.typespec` |
+| `<id>` (plugin.xml) | plugin id | `simpli.fyi.plugins.typespec` |
 | `<name>` (plugin.xml) | display name | `TypeSpec (Community)` |
 | `<vendor>` (plugin.xml) | vendor | project owner's email |
 | Platform artifact (build.gradle.kts, `intellijPlatform {}` block) | compile target | `intellijIdeaCommunity("2025.2.6.3")` — **the deprecated helper, used intentionally** |

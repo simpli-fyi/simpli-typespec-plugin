@@ -1,4 +1,4 @@
-package dev.tsp.intellij.typespec
+package simpli.fyi.plugins.typespec
 
 import com.intellij.lang.Language
 

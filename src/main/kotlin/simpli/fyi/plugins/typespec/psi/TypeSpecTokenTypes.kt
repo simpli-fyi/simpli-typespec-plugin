@@ -1,4 +1,4 @@
-package dev.tsp.intellij.typespec.psi
+package simpli.fyi.plugins.typespec.psi
 
 object TypeSpecTokenTypes {
 

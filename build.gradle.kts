@@ -19,7 +19,7 @@ val jflex: Configuration by configurations.creating
 
 val generateTypeSpecLexer by tasks.registering(JavaExec::class) {
     val flexFile = layout.projectDirectory.file("src/main/grammars/_TypeSpecLexer.flex")
-    val outDir = layout.buildDirectory.dir("generated/sources/jflex/dev/tsp/intellij/typespec/lexer")
+    val outDir = layout.buildDirectory.dir("generated/sources/jflex/simpli/fyi/plugins/typespec/lexer")
     inputs.file(flexFile)
     outputs.dir(outDir)
     classpath = jflex

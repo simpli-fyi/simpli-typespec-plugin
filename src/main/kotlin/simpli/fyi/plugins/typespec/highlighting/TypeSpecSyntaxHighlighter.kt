@@ -1,13 +1,13 @@
-package dev.tsp.intellij.typespec.highlighting
+package simpli.fyi.plugins.typespec.highlighting
 
 import com.intellij.lexer.Lexer
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.psi.TokenType
 import com.intellij.psi.tree.IElementType
 import com.intellij.psi.tree.TokenSet
-import dev.tsp.intellij.typespec.lexer.TypeSpecLexerAdapter
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenSets
-import dev.tsp.intellij.typespec.psi.TypeSpecTokenTypes
+import simpli.fyi.plugins.typespec.lexer.TypeSpecLexerAdapter
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenSets
+import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes
 import org.jetbrains.annotations.NonNls
 
 class TypeSpecSyntaxHighlighter : com.intellij.openapi.fileTypes.SyntaxHighlighterBase() {

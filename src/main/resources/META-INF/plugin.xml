@@ -1,8 +1,8 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>dev.tsp.typespec</id>
-    <name>TypeSpec (Community)</name>
-    <vendor email="nathalie.mk.ua@gmail.com">nathalie.mk.ua@gmail.com</vendor>
+    <id>simpli.fyi.plugins.typespec</id>
+    <name>Simpli TypeSpec Highlighter</name>
+    <vendor email="hello@simpli.fyi" url="https://simpli.fyi">simpli.fyi</vendor>
     <description><![CDATA[
         <p>TypeSpec (.tsp) syntax highlighting for IntelliJ IDEA Community Edition.</p>
         <p>Works on a bare Community install: no LSP, no Node.js, no Ultimate-only APIs.</p>
@@ -14,14 +14,14 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <fileType name="TypeSpec"
-                  implementationClass="dev.tsp.intellij.typespec.TypeSpecFileType"
+                  implementationClass="simpli.fyi.plugins.typespec.TypeSpecFileType"
                   fieldName="INSTANCE"
                   language="TypeSpec"
                   extensions="tsp"/>
         <lang.syntaxHighlighterFactory
                 language="TypeSpec"
-                implementationClass="dev.tsp.intellij.typespec.highlighting.TypeSpecSyntaxHighlighterFactory"/>
+                implementationClass="simpli.fyi.plugins.typespec.highlighting.TypeSpecSyntaxHighlighterFactory"/>
         <colorSettingsPage
-                implementation="dev.tsp.intellij.typespec.highlighting.TypeSpecColorSettingsPage"/>
+                implementation="simpli.fyi.plugins.typespec.highlighting.TypeSpecColorSettingsPage"/>
     </extensions>
 </idea-plugin>

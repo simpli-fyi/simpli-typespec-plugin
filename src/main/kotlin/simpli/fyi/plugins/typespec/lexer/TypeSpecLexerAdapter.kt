@@ -1,4 +1,4 @@
-package dev.tsp.intellij.typespec.lexer
+package simpli.fyi.plugins.typespec.lexer
 
 import com.intellij.lexer.FlexAdapter
 
