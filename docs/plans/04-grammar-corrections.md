@@ -1,60 +1,65 @@
-# Plan 04 — Grammar corrections from the ph-cdm corpus audit (M6a → M6f), then M5.5
+# Plan 04 — Grammar corrections from the ph-cdm corpus audit
 
-> **Status: proposed, 2026-09-02.** Written after auditing the tree at `9183c50` against
-> the real production TypeSpec repository at
+**Sequence: M6a → M6b → M6c → M5.5 (navigation) → M6d → M6e → M6f.**
+
+> **Status: ratified 2026-09-02.** Written after auditing the tree at `9183c50` against the
+> real production TypeSpec repository at
 > `/Users/KHODIAKOVA/IdeaProjects/puenktlichhansa/ph-cdm` (read-only). Governed by
-> [ADR 0007](../adr/0007-corpus-driven-grammar-acceptance.md); amends
-> [plan 03](03-grammar-and-psi.md) §M5d, which is **superseded** by M6a–M6f below.
-> [Plan 02](02-navigation.md) (M5.5, navigation) is **unchanged** but re-gated — see the
-> last section.
+> [ADR 0007](../adr/0007-corpus-driven-grammar-acceptance.md); supersedes
+> [plan 03](03-grammar-and-psi.md) §M5d. [Plan 02](02-navigation.md) (M5.5) is unchanged in
+> content but **re-gated on M6c** and **re-sequenced ahead of M6d–M6f** per
+> [ADR 0007 D11](../adr/0007-corpus-driven-grammar-acceptance.md).
+>
+> All four of the audit's open questions are **closed**: OQ1 → ADR 0007 D4/D8 (owner),
+> OQ2 → D9 (architect, upstream-verified), OQ3 → D10 (architect, upstream-verified),
+> OQ4 → D11 (owner). Nothing in this plan is blocked on a decision.
 
 Package root `simpli.fyi.plugins.typespec`. Kotlin, JDK 21, IntelliJ IDEA Community
 2025.2.6.3. Two `<depends>` — `com.intellij.modules.platform`,
-`com.intellij.modules.spellchecker` — and **no third** ([ADR 0007 D7](../adr/0007-corpus-driven-grammar-acceptance.md)).
-Nothing in this plan touches `plugin.xml`'s `<depends>`.
+`com.intellij.modules.spellchecker` — and **no third**
+([ADR 0007 D7](../adr/0007-corpus-driven-grammar-acceptance.md)). Nothing in this plan
+touches `plugin.xml`'s `<depends>`.
 
 ---
 
 ## The measurement this plan is built on
 
 Every `.tsp` file under `ph-cdm` (23 first-party + 83 `@typespec/*` stdlib files under
-`node_modules`, 106 total) was parsed with the shipped `TypeSpecParserDefinition`, and its
-`PsiErrorElement`s collected. Result: **73 of 106 files have parse errors**, including 13
-of the 23 first-party files — every first-party file that declares anything.
+`node_modules`, 106 total) was parsed with the shipped `TypeSpecParserDefinition` and its
+`PsiErrorElement`s collected. **73 of 106 files have parse errors**, including 13 of the 23
+first-party files — every first-party file that declares anything. The clean 10 are
+one-line `import`/`using` aggregators.
 
-Construct frequency, both halves of the corpus, ordered by how much damage each does:
-
-| # | Construct | Example | ph-cdm hits / files | stdlib hits / files | Status |
+| # | Construct | Example | ph-cdm hits / files | stdlib hits / files | Lands in |
 |---|---|---|---|---|---|
-| 1 | Decorator on a model member | `@key @field(1) id: ReservationId;` | 102 / 9 | 264 / 42 | **FAIL** |
-| 2 | Brace model-expression as decorator argument | `@@package(A.B, { name: "x" })` | 13 / 11 | 45 / 21 | **FAIL** (reported) |
-| 3 | `model X is Y;` with no body | `model FlightDseEvent is CdmEvent<Flight>;` | 7 / 7 | 16 / 4 | **FAIL** |
-| 4 | Triple-quoted multi-line string | `@doc("""…""")` | 10 / 3 | 0 / 0 | **FAIL** |
-| 5 | Comma-separated / unterminated model member | `model M { a: string, b: string }` | 2 / 1 | 50 / 13 | **FAIL** |
-| 6 | Spread with template arguments | `...Record<unknown>;` | 1 / 1 | 11 / 4 | **FAIL** |
-| 7 | Spread parameter in an operation signature | `op foo(...Input): Output;` | 0 / 0 | 37 / 29 | **FAIL** |
-| 8 | `extern dec` / `extern model` / `extern fn` | `extern dec useAuth(target: Namespace, …);` | 0 / 0 | 119 / 10 | **FAIL** |
-| 9 | `valueof` in a type/constraint position | `visibility: valueof EnumMember` | 0 / 0 | 96 / 12 | **FAIL** |
-| 10 | `scalar` with a body | `scalar plainDate { init fromISO(…); }` | 0 / 0 | 5 / 1 | **FAIL** |
-| 11 | Statement-level directive | `#suppress "deprecated" "x"` | 0 / 0 | 6 / 2 | **FAIL** |
-| 12 | `typeof` | `typeof Foo` | 0 / 0 | 3 / 2 | **FAIL** |
-| 13 | `interface I is Stream<T>` | | 0 / 0 | 1 / 1 | **FAIL** |
-| — | `const`, projections, `fn`, `=>` function types | | 0 / 0 | 0 / 0 | absent from corpus — **deprioritised** |
+| 1 | Decorator on a model member | `@key @field(1) id: ReservationId;` | 102 / 9 | 264 / 42 | **M6b** |
+| 2 | Brace model-expression as decorator argument | `@@package(A.B, { name: "x" })` | 13 / 11 | 45 / 21 | **M6a** (reported defect) |
+| 3 | `model X is Y;` / `model X is Y { … }` | `model FlightDseEvent is CdmEvent<Flight>;` | 7 / 7 | 16 / 4 | **M6c** |
+| 4 | Triple-quoted multi-line string | `@doc("""…""")` | 10 / 3 | 0 / 0 | **M6c** |
+| 5 | Comma-separated / unterminated model member | `model M { a: string, b: string }` | 2 / 1 | 50 / 13 | **M6b** |
+| 6 | Spread with template arguments | `...Record<unknown>;` | 1 / 1 | 11 / 4 | **M6b** |
+| 7 | Spread parameter in an operation signature | `op foo(...Input): Output;` | 0 / 0 | 37 / 29 | M6d |
+| 8 | `extern dec` / `extern model` / `extern fn` | `extern dec useAuth(target: Namespace, …);` | 0 / 0 | 119 / 10 | M6e |
+| 9 | `valueof` in a type/constraint position | `visibility: valueof EnumMember` | 0 / 0 | 96 / 12 | M6e |
+| 10 | `scalar` with a body | `scalar plainDate { init fromISO(…); }` | 0 / 0 | 5 / 1 | M6e |
+| 11 | Statement-level directive | `#suppress "deprecated" "x"` | 0 / 0 | 6 / 2 | M6e |
+| 12 | `typeof` | `typeof ContentType` | 0 / 0 | 3 / 2 | M6e |
+| — | ~~`interface I is Stream<T>`~~ | — | — | — | **struck** — no such form upstream (ADR 0007 D9); the sighting was a multi-line `model … is Stream<T> {` |
+| — | `op foo is Bar;`, `interface I extends J`, `op`-prefixed interface member | | 0 / 0 | 0 / 0 | M6d, low priority |
+| — | `const`, projections, `fn`, `=>` function types | | 0 / 0 | 0 / 0 | absent from corpus — deprioritised |
 
-Two findings that are not in the table:
+**Rows 1–6 are the whole of the owner's exposure.** Rows 7–12 are stdlib-only; they matter
+because *Go to declaration* lands the user inside `node_modules/@typespec/**`. Per ADR 0007
+D11 that is accepted as a known-imperfect landing until M6e.
 
-- **`op foo is Bar;` and `interface I extends J`** fail and have zero corpus hits. Real
-  TypeSpec constructs; low priority, folded into M6d.
+Two findings not in the table:
+
 - **Unknown constructs are swallowed silently.** `const x = 5;` has no rule anywhere in
-  `TypeSpec.bnf`, yet parses with **zero** `PsiErrorElement` — ADR 0006 D6's
-  `bad_*_token_` fallback alternatives consume it one token at a time and succeed. This is
-  why every acceptance criterion below asserts *two* properties, not one
-  ([ADR 0007 D2](../adr/0007-corpus-driven-grammar-acceptance.md)).
-
-**Sequencing principle:** row 2 first (it is the owner's reported defect, and it is a
-correctness bug in a *shipped* feature), then strictly by corpus damage. Rows 8–13 are
-stdlib-only: they matter because *Go to declaration* (M5.5) lands the user inside
-`node_modules/@typespec/**`, and a red-squiggled destination is a bad landing.
+  `TypeSpec.bnf`, yet parses with **zero** `PsiErrorElement` — ADR 0006 D6's `bad_*_token_`
+  fallback alternatives consume it one token at a time and succeed. Every acceptance
+  criterion below therefore asserts *two* properties ([ADR 0007 D2](../adr/0007-corpus-driven-grammar-acceptance.md)).
+- **`DECORATOR` is missing from `bad_model_member_token_`'s token list**, which is why one
+  decorated property poisons an entire model body instead of being recovered past.
 
 ---
 
@@ -63,211 +68,366 @@ stdlib-only: they matter because *Go to declaration* (M5.5) lands the user insid
 absence let it ship ([ADR 0007 D1–D3](../adr/0007-corpus-driven-grammar-acceptance.md)).
 
 **Files:**
-- create `src/test/testData/corpus/` (contents per ADR 0007 D4 — **blocked on OQ1**, see
-  "Owner decisions" below) with `PROVENANCE.md` and the upstream MIT `LICENSE`
+- create `src/test/testData/corpus/stdlib/**` (verbatim), `corpus/stdlib/LICENSE`,
+  `corpus/stdlib/PROVENANCE.md`
+- create `src/test/testData/corpus/real/**` (anonymised), `corpus/real/PROVENANCE.md`
+- create `src/test/testData/corpus/ANONYMISATION.md` — the rename map + ruleset
+- create `tools/corpus-sync/anonymise.py` — the re-sync tool (test tooling, not production)
+- create `src/test/testData/corpus/BASELINE.txt` — the ratchet
 - create `src/test/kotlin/simpli/fyi/plugins/typespec/parser/TypeSpecCorpusTest.kt`
-- create `src/test/testData/corpus/BASELINE.txt` — the ratchet (see below)
-- modify `src/main/grammars/TypeSpec.bnf` — `value_expression`
+- modify `src/main/grammars/TypeSpec.bnf` — `value_expression` only
 - modify `src/test/testData/parser/Decorators.txt`, `AugmentDecorator.txt` (goldens shift)
 - create `src/test/testData/parser/DecoratorModelExpressionArg.tsp` / `.txt`
 
-**Approach:**
-- Grammar, per [ADR 0007 D6](../adr/0007-corpus-driven-grammar-acceptance.md). Replace
-  ```
-  value_expression ::= (STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*) | NUMBER | 'true' | 'false'
-                     | qualified_name | object_literal | array_literal
-  ```
-  with
-  ```
-  value_expression ::= object_literal | array_literal | type_expression_
-  ```
-  `type_expression_` already reaches `literal_type` (STRING + escape run, NUMBER, `true`,
-  `false`), `type_reference_` (`qualified_name` + optional template args),
-  `model_expression` (`{ … }` — the missing case), `tuple_expression`, `paren_type_expression`
-  and `intrinsic_type`. Ordering matters: `object_literal` / `array_literal` (`#{`, `#[`)
-  must stay **first**; they are distinct tokens so there is no real ambiguity, but ordered
-  choice makes that explicit.
-  This single change fixes **both** `@dec({…})` and `@@dec(…, {…})` — the audit confirmed
-  they share `value_expression`, so they share the bug and share the fix.
-- Harness: `BasePlatformTestCase`; walk `src/test/testData/corpus/**.tsp`;
-  `PsiFileFactory.getInstance(project).createFileFromText(name, TypeSpecFileType.INSTANCE, text)`;
-  assert per ADR 0007 D2 — (i) no `PsiErrorElement`, (ii) no *unclaimed leaf token*: every
-  leaf whose type is not whitespace/comment has a composite ancestor below the file node.
-  Do **not** make the `bad_*_token_` rules public to implement (ii) — walk the tree.
-- **Ratchet:** the corpus does not go green in one milestone. `BASELINE.txt` lists corpus
-  paths still permitted to fail. The test asserts *exactly* that set fails — a file that
-  starts failing **and** a file that stops failing without being removed from the baseline
-  both fail the test. This makes each later milestone's acceptance a mechanical baseline
-  shrink and prevents silent regressions.
-- The corpus directory being empty is a **failure**, never a skip.
+#### Corpus layout
+
+```
+src/test/testData/corpus/
+├── ANONYMISATION.md          rename map + rules (below); the single source of truth
+├── BASELINE.txt              ratchet; deleted at M6f
+├── stdlib/                   @typespec/* — VERBATIM, MIT
+│   ├── LICENSE               copied from node_modules/@typespec/compiler/LICENSE
+│   ├── PROVENANCE.md         package names, exact versions, tsp compiler version, sync date
+│   └── <pkg>/<path>.tsp      mirrors the node_modules path, e.g. http/lib/decorators.tsp
+└── real/                     ph-cdm — ANONYMISED REWRITE
+    ├── PROVENANCE.md         "derived from a private repository via tools/corpus-sync;
+    │                          see ANONYMISATION.md. No original names retained."
+    └── <path>.tsp            mirrors the ph-cdm path with anonymised path segments
+```
+
+#### Anonymisation rules (`ANONYMISATION.md`) — ADR 0007 D4.2
+
+The corpus reproduces *parse failures*, so it must preserve syntax exactly and identity
+only structurally.
+
+1. **Preserve, byte for byte:** every keyword, punctuation token, decorator *name*
+   (`@doc`, `@field`, `@@package`), built-in scalar (`string`, `int32`, `utcDateTime`),
+   stdlib type reference (`Record`, `TypeSpec.Protobuf.Extern`), comment/whitespace layout,
+   line structure, and — critically — the **shape** of every construct: number of dotted
+   namespace segments, template parameter/argument counts, optionality markers, member
+   separators, decorator ordering, string-literal *kind* (`"…"` vs `"""…"""`) and line count.
+2. **Rename** only: user-declared namespace segments, model/enum/union/interface/alias/
+   scalar/op names, property/member/parameter names, and the *contents* of user-authored
+   string literals.
+3. **The rename map is injective and category-preserving** (ADR 0007 D4.2). One-to-one:
+   `Airlines`→`Acme`, `Ph`→`Ex`, `Cdm`→`Core`, `Reservation`→`Booking`,
+   `Flight`→`Journey`, … Never collapse two distinct source names onto one target. Never
+   change a name's *category*: an identifier stays an identifier, a backticked name stays
+   backticked (` `first-name` ` → ` `first-part` `), a dotted name keeps its segment count,
+   a `kebab-case` name stays kebab-case.
+4. **String literal contents** are replaced with same-shape filler: same length class, same
+   internal structure (a dotted package string `"airlines.ph.cdm.reservation.batch"` →
+   `"acme.ex.core.booking.batch"` — still dotted, still lower-case, same segment count), and
+   **escape sequences and multi-line-ness preserved exactly** (a `"""` block keeps its line
+   count and indentation — that is row 4's entire test value).
+5. **Comments** are replaced with `// (comment)` of the same line count, except where a
+   comment's *form* is under test (a `/** doc */` stays a doc comment).
+6. **File and directory names** are renamed through the same map.
+7. **Forbidden:** reformatting, sorting, deduplicating, "tidying", or dropping any
+   declaration. If a construct appears five times, it appears five times.
+
+**Self-check, mandatory, and the reason the rules above are enforceable:** run the survey
+harness over the *original* `ph-cdm` tree and over `corpus/real/`, and assert the two
+produce the **same multiset of `(construct-category, count)` pairs and the same number of
+failing files**. An anonymisation that changes the failure profile has destroyed test
+value and must be redone. `tools/corpus-sync/anonymise.py` prints this comparison.
+
+#### Re-sync procedure (for a future contributor, no domain leakage)
+
+```
+tools/corpus-sync/anonymise.py \
+    --source   /path/to/ph-cdm \
+    --map      src/test/testData/corpus/ANONYMISATION.md \
+    --dest     src/test/testData/corpus/real \
+    --verify
+```
+
+- The rename map lives **in the repo**, keyed by *target* name with a stable hash of the
+  source name — never the source name itself. New source names not in the map cause a
+  **hard failure** listing only their hashes, and the contributor adds a mapping by hand.
+  This is what stops an unattended re-sync from silently publishing a new domain term.
+- `--verify` re-runs the failure-profile self-check and refuses to write on mismatch.
+- `git diff` on `corpus/real/` after a re-sync must be reviewed by a human before commit.
+- The stdlib half re-syncs by straight copy from `node_modules/@typespec/*/lib/**.tsp`;
+  `PROVENANCE.md` versions must be updated in the same commit.
+
+#### Grammar change (the reported defect)
+
+Per [ADR 0007 D6](../adr/0007-corpus-driven-grammar-acceptance.md). Replace
+
+```
+value_expression ::= (STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*) | NUMBER | 'true' | 'false'
+                   | qualified_name | object_literal | array_literal
+```
+
+with
+
+```
+value_expression ::= object_literal | array_literal | type_expression_
+```
+
+`type_expression_` already reaches `literal_type` (STRING + escape run, NUMBER, `true`,
+`false`), `type_reference_` (`qualified_name` + optional template args), **`model_expression`
+(`{ … }` — the missing case)**, `tuple_expression`, `paren_type_expression` and
+`intrinsic_type`. `object_literal` / `array_literal` (`#{`, `#[`) stay **first**: distinct
+tokens, so no real ambiguity, but ordered choice makes it explicit. One change fixes both
+`@dec({…})` and `@@dec(…, {…})` — the audit confirmed they share `value_expression`.
+
+#### Harness
+
+`BasePlatformTestCase`; walk `src/test/testData/corpus/**.tsp`;
+`PsiFileFactory.getInstance(project).createFileFromText(name, TypeSpecFileType.INSTANCE, text)`;
+assert per ADR 0007 D2 — (i) no `PsiErrorElement`, (ii) **no unclaimed leaf token**: every
+leaf whose type is not whitespace/comment has a composite ancestor below the file node. Do
+**not** make the `bad_*_token_` rules public to implement (ii) — walk the tree.
+
+**Ratchet:** `BASELINE.txt` lists corpus paths still permitted to fail, each with a one-line
+reason naming a row number from the table. The test asserts *exactly* that set fails — a
+newly-failing file **and** a file that stops failing without leaving the baseline both fail
+the test. An empty corpus directory is a **failure**, never a skip.
 
 **Acceptance (`tsp-tester`):**
-- `TypeSpecCorpusTest` exists, reads the vendored corpus, and both assertions are live.
-- `BASELINE.txt` is checked in with the post-M6a failing set; every file listed in it has a
-  one-line reason naming a row number from the table above.
-- New fixture `DecoratorModelExpressionArg.tsp` covers `@service({ title: "x" })`,
-  `@@package(A.B, { name: "x" });`, `@dec(#{a: 1}, [T, U], "s", 3, true, Foo.Bar)` and
+- Corpus vendored per the layout above; `stdlib/LICENSE` and both `PROVENANCE.md` present;
+  `ANONYMISATION.md` present and matching what was actually applied.
+- Grepping `corpus/real/` for the strings `Airlines`, `Ph`, `Cdm`, `Puenktlich`, `hansa`,
+  and every source-side name in the map returns **nothing**. This is an explicit test.
+- The failure-profile self-check passes (same construct-category multiset as the original).
+- `TypeSpecCorpusTest` exists with both assertions live and the ratchet wired.
+- `BASELINE.txt` checked in with the post-M6a failing set.
+- `DecoratorModelExpressionArg.tsp` covers `@service({ title: "x" })`,
+  `@@package(A.B, { name: "x" });`, `@dec(#{a: 1}, [T, U], "s", 3, true, Foo.Bar)`, and
   passes `doTest(true, true)`.
-- `Decorators.txt` / `AugmentDecorator.txt` re-reviewed by hand — a `value_expression` for
-  a plain string/number/reference must now contain the inlined `literal_type` /
-  `qualified_name` shape. **Blind `-Didea.tests.overwrite.data=true` rebaselining is
-  forbidden**; `tsp-tester` reads the new goldens and confirms each changed line.
+- `Decorators.txt` / `AugmentDecorator.txt` **hand-reviewed** — a `value_expression` for a
+  plain string/number/reference now contains the inlined `literal_type` / `qualified_name`
+  shape. **Blind `-Didea.tests.overwrite.data=true` rebaselining is forbidden**;
+  `tsp-tester` reads each changed line and confirms it.
 - All 140 existing tests still pass.
 
-**Done when:** `./gradlew clean build test verifyPlugin` is green **and** the ph-cdm-derived
-half of `BASELINE.txt` no longer lists any file whose only failure was row 2.
+**Done when:** `./gradlew clean build test verifyPlugin` is green **and** no
+`corpus/real/**` entry in `BASELINE.txt` cites row 2.
 
 **Risks / open questions:**
-- **OQ1 (owner, blocking)** — vendoring the `ph-cdm` files. See "Owner decisions".
 - `value_expression` is referenced by `model_property`'s default, `object_literal_member`,
-  `enum_member` and both decorator rules. Widening it widens all five; that is intended
-  (upstream has one `Expression`), but the M5b/M5c goldens for `Enum`, `KitchenSinkCore`
-  and `OptionalPropertyComplexType` may also shift. Same hand-review rule applies.
+  `enum_member` and both decorator rules. Widening it widens all five — intended (upstream
+  has one `Expression`), but the `Enum`, `KitchenSinkCore` and `OptionalPropertyComplexType`
+  goldens may also shift. Same hand-review rule.
 - `model_expression` reuses `model_member_`, whose recovery fallback eats almost anything.
-  Inside a decorator argument list that fallback can now swallow a stray `)`. If a
-  well-formed file starts parsing *worse*, tighten `bad_model_member_guard_` to
-  `!('}' | ')' | ',')` rather than reverting the unification.
+  Inside a decorator argument list it can now swallow a stray `)`. If a well-formed file
+  starts parsing *worse*, tighten `bad_model_member_guard_` to `!('}' | ')' | ',')` rather
+  than reverting the unification.
+- The anonymisation is the bulk of this milestone's effort, not the one-line grammar fix.
+  If it threatens to stall M6a, land the harness + grammar fix against `corpus/stdlib/`
+  only, with `corpus/real/` and its assertions as an immediately-following M6a′ — but
+  **M6b must not start before `corpus/real/` exists**, since M6b's done-signal is stated in
+  terms of it.
 
 ---
 
 ### M6b — Model member surface (rows 1, 5, 6)
-**Goal:** every model body in the corpus parses. This is the largest single win in the plan
-(row 1 alone is 366 occurrences across 51 files).
+**Goal:** every model body in the corpus parses. Largest single win — row 1 alone is 366
+occurrences across 51 files.
 
 **Files:** `src/main/grammars/TypeSpec.bnf`; new fixtures
 `src/test/testData/parser/ModelDecoratedProperty.tsp`/`.txt`,
 `ModelCommaSeparators.tsp`/`.txt`, `ModelSpreadTemplate.tsp`/`.txt`;
 `src/test/testData/corpus/BASELINE.txt`.
 
-**Approach:**
+**Approach.** Separator semantics are settled against upstream
+(`ListKind.ModelProperties`: `delimiter: Semicolon`, `toleratedDelimiter: Comma`, tolerated
+*is* valid, trailing separator optional; `ListKind.EnumMembers` is the same object) — see
+[ADR 0007 § Primary-source facts](../adr/0007-corpus-driven-grammar-acceptance.md). Do not
+re-derive.
+
 - `model_property ::= decorator_application* identifier '?'? ':' type_expression_ ('=' value_expression)? member_separator_?`
-  — add the decorator prefix (row 1). `pin` must move from `3` to `4`? **No**: `pin` is
-  1-based over the *sequence*, and `decorator_application*` is one element, so the `':'`
-  moves from position 3 to position 4. `tsp-dev` must set `pin=4` and verify the two
-  recovery goldens (`BrokenProperty.txt`) still hold — a wrong pin here silently degrades
-  all error recovery.
-- `private member_separator_ ::= ';' | ','` and make it **optional**, so `model M { a: string }`
-  (no trailing separator — the dominant form inside inline `model_expression`s) parses
-  (row 5).
+  — adds the decorator prefix (row 1). `decorator_application*` occupies sequence position 1,
+  so the `':'` moves from position 3 to **position 4: set `pin=4`**. A wrong pin here
+  silently degrades all error recovery without failing a test; verify `BrokenProperty.txt`
+  by hand afterwards.
+- `private member_separator_ ::= ';' | ','`, used **optionally**, so `model M { a: string }`
+  (no trailing separator — the dominant form inside inline `model_expression`s) parses (row 5).
+- `enum_member` gets the same optional `member_separator_?` treatment.
 - `model_spread ::= '...' type_expression_ member_separator_?` (row 6) — `Record<unknown>`
   needs template arguments, which `type_expression_` supplies. Keep the `'...'` pin.
-- Add `DECORATOR` to `bad_model_member_token_`'s token list. It is currently absent, which
-  is why a single decorated property poisons the whole model body instead of being
-  recovered past.
+- **Add `DECORATOR` to `bad_model_member_token_`'s token list.** Currently absent; this is
+  why one decorated property poisons a whole model body.
 - **PSI contract regression check:** `TypeSpecPsiUtil.findNameIdentifier` takes the *first*
   direct `TypeSpecIdentifier` child. `decorator_application` wraps a single `DECORATOR`
   token and has no `identifier` child, so a decorated property's name is still found — but
-  `tsp-dev` must confirm this against the generated PSI, not assume it. If
-  `decorator_argument_list`'s contents ever became direct children this silently breaks.
+  `tsp-dev` must confirm this against the **generated** PSI, not assume it.
 
 **Acceptance (`tsp-tester`):**
-- Three new golden fixtures, `doTest(true, true)`.
+- Three new golden fixtures at `doTest(true, true)`, covering: multiple stacked decorators;
+  decorators with and without argument lists; `,` separators; a missing final separator;
+  `...Record<unknown>;` and `...Foo.Bar<T, U>,`.
 - `TypeSpecPsiContractTest` gains a case: a decorated property's `getName()` /
-  `getNameIdentifier()` / `getTextOffset()` still point at the property name, not at the
+  `getNameIdentifier()` / `getTextOffset()` still point at the property name, not the
   decorator.
-- Existing `BrokenProperty.txt` / `BrokenStatement.txt` recovery goldens re-reviewed by
-  hand after the pin change.
-- `BASELINE.txt` shrinks by at least the 9 first-party + 42 stdlib files whose only
-  failures were rows 1/5/6.
+- `BrokenProperty.txt` / `BrokenStatement.txt` re-reviewed **by hand** after the pin change.
+- `BASELINE.txt` shrinks by every file whose only failures were rows 1/5/6.
 
 **Done when:** `./gradlew clean build test verifyPlugin` green, and `BASELINE.txt` contains
 **zero** `corpus/real/**` entries attributable to rows 1, 5 or 6.
 
-**Risks / open questions:**
-- Making the member separator optional makes `model M { a: string b: string }` legal. That
-  is a real loosening. Accept it: an over-permissive grammar produces a wrong tree,
-  an under-permissive one produces red squiggles on valid code, and only the second is
-  visible to the user. Record the loosening as a comment in the `.bnf`.
+**Risks / open questions:** an optional separator makes `model M { a: string b: string }`
+legal. Accept it — an over-permissive grammar yields a wrong tree, an under-permissive one
+yields red squiggles on valid code, and only the second is visible to the user. Record the
+loosening as a comment in the `.bnf`.
 
 ---
 
 ### M6c — Model heritage without a body, and multi-line strings (rows 3, 4)
-**Goal:** the last two constructs blocking the owner's own repository.
+**Goal:** the last two constructs blocking the owner's repository. **This is the milestone
+at which `ph-cdm` is clean in the IDE** — the visible goal of the whole plan, and the
+natural release-candidate point if the owner later wants one
+([ADR 0007 D11](../adr/0007-corpus-driven-grammar-acceptance.md); publishing itself stays
+deferred per ADR 0002 D7).
 
 **Files:** `src/main/grammars/TypeSpec.bnf`;
-`src/test/testData/parser/ModelIsNoBody.tsp`/`.txt`, `MultilineString.tsp`/`.txt`;
-`BASELINE.txt`.
+`src/test/testData/parser/ModelIsNoBody.tsp`/`.txt`, `ModelExtendsNoBodyIsError.tsp`/`.txt`,
+`MultilineString.tsp`/`.txt`; `src/test/testData/corpus/BASELINE.txt`.
 
-**Approach:**
-- `model_statement ::= decorator_application* 'model' identifier template_parameter_list? ( is_clause ';' | extends_clause? is_clause? model_body )`
-  — the `is`-without-body form is a *distinct alternative*, not an optional `model_body`.
-  Making the body optional would also legalise `model M extends Foo;`, which the audit
-  found zero occurrences of and believes is invalid (ADR 0007 OQ2). Keep them separate so
-  the decision stays reversible in one line.
+**Approach.**
+
+- Model heritage, per [ADR 0007 D9](../adr/0007-corpus-driven-grammar-acceptance.md) —
+  upstream `parseModelStatement` admits `;` **only** after `is`, and admits a body after
+  `is` too:
+  ```
+  model_statement ::= decorator_application* 'model' identifier template_parameter_list?
+                      ( is_clause (';' | model_body) | extends_clause? model_body )
+  ```
+  Both `is` forms are required: `model M is Foo<Bar>;` (23 corpus occurrences) **and**
+  `model M is Stream<T> { … }` (`@typespec/http/lib/streams/main.tsp`). `extends` keeps
+  requiring a body — do **not** simply make `model_body` optional, which would legalise
+  `model M extends Foo;`. Keeping the alternatives separate keeps D9 reversible in one line.
 - Multi-line strings: **the lexer is already correct** — `_TypeSpecLexer.flex` lines 53–54
-  emit `MULTILINE_STRING`. The grammar simply never references that token. Declare
+  emit `MULTILINE_STRING`; the grammar never references the token. Declare
   `MULTILINE_STRING` in the `.bnf` `tokens=[…]` block (bare-referencable, same as
-  `DECORATOR`) and add it as an alternative of `literal_type`. Confirm whether the
-  `MULTILINE_STRING_S` lexer state can emit *several* `MULTILINE_STRING` tokens for one
-  source literal the way `STRING_S` does for escapes; if so, `literal_type` needs a
-  `MULTILINE_STRING+` run, not a single token. **`tsp-dev` must check the lexer test's
-  actual token stream, not the flex source's intent.**
+  `DECORATOR`) and add it as an alternative of `literal_type`. **Check whether the
+  `MULTILINE_STRING_S` lexer state emits *several* `MULTILINE_STRING` tokens for one source
+  literal** the way `STRING_S` does for escapes; if so `literal_type` needs a
+  `MULTILINE_STRING+` run. Read the actual token stream in `TypeSpecLexerTest`, not the
+  flex source's intent.
 
 **Acceptance (`tsp-tester`):**
-- `ModelIsNoBody.tsp` covers `model A is B;`, `model C is D<E>;`, and a decorated one.
-- A negative fixture asserting `model M extends Foo;` **still** produces a `PsiErrorElement`
-  (locks OQ2's current answer in place so a future change is deliberate).
+- `ModelIsNoBody.tsp` covers `model A is B;`, `model C is D<E>;`, a decorated one, and
+  `model F is G<H> { x: string; }` — all at `doTest(true, true)`.
+- `ModelExtendsNoBodyIsError.tsp` at `doTest(true)` asserts `model M extends Foo;` **still**
+  produces a `PsiErrorElement`, locking ADR 0007 D9 in place so a future change is deliberate.
 - `MultilineString.tsp` uses the exact shape from `ph-cdm/model/reservation/reservation.tsp`
-  lines 57+ — a `@doc("""…""")` spanning four lines inside a model body.
-- A lexer-level assertion in `TypeSpecLexerTest` pinning how many tokens one `"""…"""`
-  literal yields.
+  line 57+ — a `@doc("""…""")` spanning four lines inside a model body — plus a
+  `"""`-valued `alias` and a `"""` as a decorator argument.
+- `TypeSpecLexerTest` gains an assertion pinning how many tokens one `"""…"""` literal yields.
 
 **Done when:** `./gradlew clean build test verifyPlugin` green **and** `BASELINE.txt`
-contains **zero** `corpus/real/**` entries at all. *This is the milestone at which the
-owner's repository is clean in the IDE* — the visible goal of the whole plan.
+contains **zero `corpus/real/**` entries at all**.
 
-**Risks / open questions:** the `is`-alternative interacts with `pin=2`; a mis-set pin
-turns `model` + identifier into an unrecoverable commit point.
+**Risks / open questions:** the `is` alternative interacts with `pin=2` on
+`model_statement`; a mis-set pin turns `model` + identifier into an unrecoverable commit
+point. Re-review both recovery goldens.
 
 ---
 
-### M6d — Operation and interface surface (rows 7, 13, + `op is`, `interface extends`)
+### M5.5 — Reference resolution and jump navigation
+
+**Runs here**, between M6c and M6d, per
+[ADR 0007 D11](../adr/0007-corpus-driven-grammar-acceptance.md).
+[Plan 02](02-navigation.md) is the plan; it is unchanged in content. Three notes carried
+over from the audit:
+
+1. **Navigation was never implemented and was never claimed to be.** `plugin.xml` registers
+   no `psi.referenceContributor` and no `gotoDeclarationHandler`;
+   `grep -rl "PsiReference\|GotoDeclaration\|ResolveResult" src/main/kotlin` is empty. Plan
+   02 has always scoped this as M5.5. The gap was between expectation and sequence, not
+   between plan and tree.
+
+2. **The `PsiNamedElement` groundwork M5b/M5c owed it is genuinely present and correct.**
+   `TypeSpecNamedElement : PsiNameIdentifierOwner`, `TypeSpecNamedElementMixin` (backtick-
+   stripping `getName`, `getNameIdentifier`, `getTextOffset` at the name, throwing
+   `setName`, `getPresentation`), `TypeSpecPsiUtil.findNameIdentifier`, and the four
+   `TypeSpecFile` accessors all exist and are covered by `TypeSpecPsiContractTest` across
+   all 11 named rules. ADR 0004 D7.2's contract is satisfied.
+
+3. **Prerequisite is M6c green, not M5c green.** A resolver built and tested against a
+   grammar that mis-parses every decorated model property would be tuned to the wrong tree
+   shape, and M6b changes `model_property`'s child list — exactly the node the resolver's
+   declaration index reads. Plan 02's five-point prerequisite check runs first and is
+   authorised to stop the milestone; **substitute "M6c" wherever it reads "M5c".**
+
+**One correction to plan 02 to make before it starts.**
+`TypeSpecFile.getTopLevelDeclarations()` returns *direct* `TypeSpecNamedElement` children of
+the file. Every file in the corpus uses a **blockless** `namespace Foo.Bar;`, under which —
+by the `namespace_statement` rule's own containment design — all subsequent declarations are
+children of the *namespace*, not the file. So the accessor returns exactly one element for a
+real-world file. That is correct per ADR 0004 D7.4 and is **not** a bug, but plan 02's
+resolver must recurse through namespaces rather than treat the accessor as "all declarations
+in this file". Verified against the corpus; flagged so `tsp-dev` does not rediscover it as a
+resolve-returns-null mystery.
+
+**Known-imperfect landing, accepted (ADR 0007 D11).** M5.5 ships while
+`node_modules/@typespec/**` still parses with errors, so *Go to declaration* into a library
+file lands on a squiggled page. Strictly better than no navigation; M6e closes it. If plan
+02 adds a corpus-backed navigation test, it must target `corpus/real/**` (clean after M6c),
+not `corpus/stdlib/**`.
+
+---
+
+### M6d — Operation and interface surface (row 7 + heritage forms)
 **Goal:** operation signatures in the stdlib parse.
 
-**Files:** `src/main/grammars/TypeSpec.bnf`; `OperationSpreadParam.tsp`/`.txt`,
+**Files:** `src/main/grammars/TypeSpec.bnf`;
+`src/test/testData/parser/OperationSpreadParam.tsp`/`.txt`,
 `InterfaceHeritage.tsp`/`.txt`, `OpIs.tsp`/`.txt`; `BASELINE.txt`.
 
-**Approach:**
-- `operation_parameter ::= decorator_application* ('...')? identifier '?'? ':' type_expression_ ('=' value_expression)?`
-  — the spread form and the default value. Note the pin must move again.
-- `op_statement` gains an `is` alternative: `… identifier template_parameter_list? ( is_clause ';' | operation_parameter_list ':' type_expression_ ';' )`.
-- `interface_statement` gains `extends_clause?` (comma-separated list of references, per
-  upstream) and an `is` form.
-- `interface_operation` mirrors `op_statement`'s parameter changes.
+**Approach.** Upstream facts already established (ADR 0007 § Primary-source facts) — do not
+re-derive: interface bodies are `;`-delimited with `,` tolerated-but-invalid; they admit an
+optional `op` keyword prefix; `interface X extends A, B` is a **comma-separated list of
+reference expressions** (`parseList(ListKind.Heritage, parseReferenceExpression)`), not of
+full type expressions; and **there is no `interface … is` form**.
 
-**Acceptance (`tsp-tester`):** three fixtures at `doTest(true, true)`; `BASELINE.txt`
-shrinks by the 29 stdlib files whose only failure was row 7.
+- `operation_parameter ::= decorator_application* '...'? identifier '?'? ':' type_expression_ ('=' value_expression)?`
+  — spread form (row 7) and default value. The pin moves again; re-verify recovery.
+- `op_statement` gains an `is` alternative:
+  `… identifier template_parameter_list? ( is_clause ';' | operation_parameter_list ':' type_expression_ ';' )`.
+- `interface_statement ::= decorator_application* 'interface' identifier template_parameter_list? interface_heritage_? interface_body`
+  with `private interface_heritage_ ::= 'extends' type_reference_ (',' type_reference_)*`.
+  **No `is` alternative.**
+- `interface_operation` mirrors `operation_parameter`'s changes and accepts an optional
+  leading `'op'` keyword (grammatical upstream; **zero** corpus occurrences, so implement it
+  but do not spend time on it).
+
+**Acceptance (`tsp-tester`):** three fixtures at `doTest(true, true)`; a negative fixture
+asserting `interface I is Stream<T>;` still errors (locks ADR 0007 D9's corollary);
+`BASELINE.txt` shrinks by the 29 stdlib files whose only failure was row 7.
 
 **Done when:** `./gradlew clean build test verifyPlugin` green and the baseline shrinks as
 stated.
 
-**Risks / open questions:** `interface I extends A, B` — is the heritage list
-comma-separated, and may it carry template arguments? Zero corpus occurrences, so this is
-**unverified**; `tsp-dev` should implement the comma-separated form and mark it in the
-`.bnf` as unverified-against-corpus.
+**Risks / open questions:** none outstanding — the two the audit flagged here (heritage list
+shape, `interface is`) are closed by ADR 0007.
 
 ---
 
 ### M6e — Library-authoring surface (rows 8–12)
-**Goal:** `node_modules/@typespec/**` parses clean, so M5.5's *Go to declaration* lands
-somewhere that is not red.
+**Goal:** `node_modules/@typespec/**` parses clean, so *Go to declaration* lands somewhere
+that is not red.
 
 **Files:** `src/main/grammars/TypeSpec.bnf`; fixtures `ExternDeclarations.tsp`/`.txt`,
 `ValueOf.tsp`/`.txt`, `ScalarBody.tsp`/`.txt`, `Directives.tsp`/`.txt`; `BASELINE.txt`.
 
 **Approach:**
 - `extern_declaration ::= 'extern' ( dec_statement | fn_statement | model_statement )` as a
-  new `top_level_item_` alternative, plus `dec_statement ::= 'dec' identifier operation_parameter_list ';'`
-  and `fn_statement`. `dec`/`fn`/`extern` — check whether the lexer keywordizes them; if not,
-  they arrive as `IDENTIFIER` and the literals in the `.bnf` will not match. **Verify in
-  `_TypeSpecLexer.flex` before writing a rule.**
+  new `top_level_item_` alternative, plus
+  `dec_statement ::= 'dec' identifier operation_parameter_list ';'` and `fn_statement`.
+  **Check first whether the lexer keywordizes `extern` / `dec` / `fn`** — if not they arrive
+  as `IDENTIFIER` and bare literals in the `.bnf` will not match. Read
+  `_TypeSpecLexer.flex`; do not assume.
 - `valueof` / `typeof` as prefix operators in `primary_type_expression`. Same lexer check.
-- `scalar_statement` gains an optional body (`'{' scalar_member_* '}'`) with `init`
-  constructors.
+- `scalar_statement` gains an optional body: `'{' scalar_member_* '}'`, `;`-delimited with
+  `,` tolerated (`ListKind.ScalarMembers`), members being `init` constructors.
 - Statement-level directives: one `DIRECTIVE` token plus a run of trailing string literals,
   attachable as a prefix on `top_level_item_` and on model/enum/union members. Plan 03
-  already identified placement as the hard part; it still is.
-- Rest parameters `...visibilities: valueof EnumMember[]` — covered by M6d's spread plus
+  already identified *placement* as the hard part; it still is.
+- Rest parameters `...visibilities: valueof EnumMember[]` fall out of M6d's spread plus
   `valueof` here.
 
 **Acceptance (`tsp-tester`):** four fixtures at `doTest(true, true)`; `BASELINE.txt` reduced
@@ -275,24 +435,34 @@ to at most a handful of entries, each with a written reason.
 
 **Done when:** `./gradlew clean build test verifyPlugin` green.
 
-**Risks / open questions:** directive placement is genuinely invasive. If it stalls, split
-it out rather than blocking rows 8–10.
+**Risks / open questions:** directive placement is genuinely invasive. If it stalls, split it
+out rather than blocking rows 8–10.
 
 ---
 
 ### M6f — Zero-baseline gate
-**Goal:** delete `BASELINE.txt` and make the corpus test an absolute assertion.
+**Goal:** delete the ratchet; the corpus becomes an absolute assertion.
 
-**Files:** delete `src/test/testData/corpus/BASELINE.txt`; modify
-`TypeSpecCorpusTest.kt`; modify `docs/plans/03-grammar-and-psi.md` (mark §M5d superseded);
-add the valid-TypeSpec kitchen-sink variant per ADR 0007 §Consequences.
+**Files:** delete `src/test/testData/corpus/BASELINE.txt`; modify `TypeSpecCorpusTest.kt`;
+create `src/test/testData/parser/KitchenSink.tsp`/`.txt`; modify
+`docs/plans/03-grammar-and-psi.md` (§M5d formally closed); modify
+`docs/plans/00-milestones.md`.
 
-**Approach:** remove the ratchet; the test now asserts *every* corpus file satisfies both
-ADR 0007 D2 properties. Add the corpus directory to the "what a grammar change must not
-break" note in `docs/plans/00-milestones.md`.
+**Approach:**
+- Remove the allowlist; the test asserts *every* corpus file satisfies both ADR 0007 D2
+  properties.
+- Add `src/test/testData/parser/KitchenSink.tsp` — a **valid-TypeSpec variant** of
+  `src/test/testData/lexer/kitchen-sink.tsp`, per
+  [ADR 0007 D10](../adr/0007-corpus-driven-grammar-acceptance.md). The lexer copy stays
+  **byte-identical and untouched** (M2's golden owns it); the invalid
+  `interface Store { values: #[1, 2, 3]; }` becomes an operation signature in the parser
+  variant, and the grammar is **not** widened to accept a property in an interface body.
+- Record in `00-milestones.md` that the corpus is now part of "what a grammar change must
+  not break".
 
-**Acceptance (`tsp-tester`):** `TypeSpecCorpusTest` has no allowlist; deliberately breaking
-one `.bnf` rule makes it fail (verify this by hand once, then revert).
+**Acceptance (`tsp-tester`):** `TypeSpecCorpusTest` has no allowlist; `KitchenSink.tsp`
+passes `doTest(true, true)`; deliberately breaking one `.bnf` rule makes the corpus test
+fail (verify by hand once, then revert).
 
 **Done when:** `./gradlew clean build test verifyPlugin` green with no baseline file in the
 tree.
@@ -301,47 +471,14 @@ tree.
 
 ---
 
-## Then, and only then: M5.5 — navigation
+## Decision log
 
-[Plan 02](02-navigation.md) is unchanged and still correct. Two corrections to its status:
+| Q | Decision | By | Recorded |
+|---|---|---|---|
+| OQ1 | Corpus vendored as a **domain-anonymised rewrite** (`corpus/real/`), stdlib verbatim + MIT attribution (`corpus/stdlib/`) | owner | ADR 0007 D4, D8; §M6a above |
+| OQ2 | `model M extends Foo;` is **invalid**; grammar keeps rejecting it, with a negative fixture. Corollary: `model X is Y { … }` **is** valid and must parse; `interface … is` does not exist | architect, verified against `@typespec/compiler` `parseModelStatement` / `parseInterfaceStatement` | ADR 0007 D9; §M6c, §M6d |
+| OQ3 | `interface Store { values: #[1,2,3]; }` is **invalid**; option (ii) — `kitchen-sink.tsp` untouched, a valid variant added in M6f | architect, verified against `parseInterfaceStatement` | ADR 0007 D10; §M6f |
+| OQ4 | Sequence **M6a → M6b → M6c → M5.5 → M6d → M6e → M6f**; publishing deferred per ADR 0002 D7; M6c noted as the natural RC point | owner | ADR 0007 D11; this document's header |
 
-1. **Navigation was never implemented and was never claimed to be.** `plugin.xml` registers
-   no `psi.referenceContributor` and no `gotoDeclarationHandler`;
-   `grep -rl "PsiReference\|GotoDeclaration\|ResolveResult" src/main/kotlin` is empty. Plan
-   02 has always described this as M5.5, gated on M5c. The gap is between the owner's
-   expectation and the milestone sequence, not between the plan and the tree.
-
-2. **The `PsiNamedElement` groundwork M5b/M5c owed it is genuinely present and correct.**
-   `TypeSpecNamedElement : PsiNameIdentifierOwner`,
-   `TypeSpecNamedElementMixin` (`getName` with backtick stripping, `getNameIdentifier`,
-   `getTextOffset` at the name, `setName` throwing, `getPresentation`),
-   `TypeSpecPsiUtil.findNameIdentifier`, and the four `TypeSpecFile` accessors all exist and
-   are covered by `TypeSpecPsiContractTest` across all 11 named rules
-   (`namespace`, `model`, model property, template parameter, `op`, `interface`, `enum` +
-   member, `union` + variant, `alias`, `scalar`). ADR 0004 D7.2's contract is satisfied.
-
-**Re-gating.** Plan 02's prerequisite becomes **M6c green**, not M5c green. Rationale: a
-resolver built and tested against a grammar that mis-parses every decorated model property
-would be tuned to the wrong tree shape, and M6b changes `model_property`'s child list —
-exactly the node the resolver's declaration index reads.
-
-**One correction to plan 02 to make before it starts.** `TypeSpecFile.getTopLevelDeclarations()`
-returns *direct* `TypeSpecNamedElement` children of the file. Every file in the ph-cdm corpus
-uses a **blockless** `namespace Foo.Bar;`, under which — by the `namespace_statement` rule's
-own containment design — all subsequent declarations are children of the *namespace*, not of
-the file. So this accessor returns exactly one element for a real-world file. That is
-correct per ADR 0004 D7.4 and is *not* a bug, but plan 02's resolver must recurse through
-namespaces rather than treating the accessor as "all declarations in this file". Verified
-against the corpus, flagged here so `tsp-dev` does not discover it as a resolve-returns-null
-mystery.
-
----
-
-## Owner decisions required
-
-| # | Decision | Why it cannot be made by an agent |
-|---|---|---|
-| OQ1 | **May `ph-cdm` `.tsp` files be vendored into this repo?** (verbatim / domain-anonymised rewrite / not at all). Recommendation: anonymised rewrite — keeps all test value, publishes no domain model. | The files are the owner's production CDM; this plugin repo may be published. **Blocks M6a.** |
-| OQ2 | Is `model M extends Foo;` (heritage, no body) valid TypeSpec? Zero corpus occurrences; M6c deliberately keeps rejecting it. | Unverified against `microsoft/typespec` primary sources. Cheap to reverse. |
-| OQ3 | Should `interface Store { values: #[1,2,3]; }` in `src/test/testData/lexer/kitchen-sink.tsp` be corrected to valid TypeSpec (plan 03 §M5d's standing open question)? ADR 0007 recommends option (ii) — a separate valid-TypeSpec variant, leaving M2's lexer golden untouched. | Touches an M2 golden. Was already flagged for the owner in plan 03 and is still unanswered. |
-| OQ4 | Ship an interim 0.0.2 with M6a–M6c only (owner's repo clean, stdlib still squiggly), or hold until M6f? | Release/marketplace call. |
+**No open questions remain.** A new one must be raised as an ADR amendment, not resolved
+inline by `tsp-dev`.

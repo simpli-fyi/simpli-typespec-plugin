@@ -1,6 +1,7 @@
 # ADR 0007 — Corpus-driven grammar acceptance
 
-- **Status:** proposed (needs owner ratification on D4/D5 and the two open questions)
+- **Status:** **accepted 2026-09-02.** Owner ratified D4 (corpus vendoring) and D11
+  (sequencing); D9/D10 resolved by the architect against upstream primary sources.
 - **Date:** 2026-09-02
 - **Supersedes:** nothing. **Amends:** [ADR 0006](0006-grammar-toolchain.md) §D8/D9
   (acceptance oracle for grammar milestones), [plan 03](../plans/03-grammar-and-psi.md)
@@ -96,18 +97,30 @@ hash.
 
 The corpus test must **fail loudly** if the corpus directory is empty — never skip.
 
-### D4 — Corpus composition (needs owner ratification)
+### D4 — Corpus composition — DECIDED (owner, 2026-09-02)
 
-Proposed two tiers:
+Two tiers, both vendored under `src/test/testData/corpus/`:
 
-- `src/test/testData/corpus/stdlib/` — the `@typespec/*` library `.tsp` files
-  (`compiler/lib/std`, `http/lib`, `openapi/lib`, `openapi3/lib`, `json-schema/lib`,
-  `protobuf/lib`). These are the files a user's *Go to declaration* will land in, so they
-  must parse. Upstream `microsoft/typespec` is MIT-licensed; vendoring requires retaining
-  the licence header — `tsp-dev` must copy `node_modules/@typespec/compiler/LICENSE`
-  alongside and add a `PROVENANCE.md` recording package name + version.
-- `src/test/testData/corpus/real/` — representative files derived from `ph-cdm`.
-  **These are the owner's proprietary domain model.** See open question OQ1.
+- `corpus/stdlib/` — the `@typespec/*` library `.tsp` files, **vendored verbatim**.
+  MIT-licensed; attribution obligations in D4.1.
+- `corpus/real/` — the `ph-cdm` files, **vendored as a domain-anonymised rewrite**
+  (owner's ruling on OQ1). Syntactic constructs preserved *exactly* — the corpus exists to
+  reproduce the real parse failures — but no `ph-cdm` schema content is published.
+
+The full anonymisation ruleset, re-sync procedure and licence layout are specified in
+[plan 04](../plans/04-grammar-corrections.md) §M6a, which is where `tsp-dev` executes them.
+Two constraints are load-bearing enough to restate here:
+
+- **D4.1 — attribution.** `corpus/stdlib/LICENSE` (copied from
+  `node_modules/@typespec/compiler/LICENSE`) and `corpus/stdlib/PROVENANCE.md` (package
+  names + exact versions + the `tsp` compiler version that produced them) are mandatory.
+  A vendored MIT corpus without its licence is a licence violation, not a style nit.
+- **D4.2 — anonymisation must be construct-preserving and injective.** The rename map is
+  one-to-one: two distinct source names never collapse onto one target name, and a rename
+  never changes a token's *category* (an identifier stays an identifier, a dotted namespace
+  keeps the same number of segments, a backticked name stays backticked). Collapsing two
+  differently-shaped namespaces onto one name silently deletes a test case, which is the
+  exact failure mode this ADR exists to prevent.
 
 ### D5 — Grammar tiering is by corpus frequency, not by construct taxonomy
 
@@ -156,24 +169,95 @@ action required; recorded here so the question is not re-opened.
 - The corpus test is a single test method over ~106 files. It runs in-process via
   `PsiFileFactory.createFileFromText`; the audit's run took well under a minute.
 - The repository gains a vendored third-party corpus (licence obligations, D4).
-- Plan 03 §M5d's done-signal ("unmodified `kitchen-sink.tsp` parses clean") is retained but
-  demoted: it is no longer sufficient, only necessary. Its open question about
-  `interface Store { values: #[1,2,3]; }` is resolved by D1 — that construct is invalid
-  TypeSpec, no corpus file contains it, and the grammar must not accept it. `tsp-dev`
-  should take option (ii): a valid-TypeSpec variant, leaving M2's lexer golden untouched.
+- Plan 03 §M5d's done-signal ("unmodified `kitchen-sink.tsp` parses clean") is **withdrawn**,
+  not merely demoted: the file is not valid TypeSpec (see D10) and can never be the target.
+  A valid-TypeSpec variant replaces it in M6f, and the corpus is the real oracle.
 
-## Open questions for the owner
+## Decisions taken on the audit's open questions
 
-- **OQ1 — may `ph-cdm` files be vendored into this plugin repository?** They are the
-  owner's production domain model (flight/reservation CDM) and this plugin repo may be
-  published. Options: (a) vendor verbatim; (b) vendor a structurally-identical,
-  domain-anonymised rewrite (same constructs, renamed types — preserves all test value);
-  (c) do not vendor, rely on the MIT-licensed `@typespec` stdlib corpus only, and keep the
-  `ph-cdm` sweep as a manual pre-release check. **Recommendation: (b).** `tsp-dev` must
-  not choose.
-- **OQ2 — is `model M extends Foo;` (heritage, no body, `;`-terminated) valid TypeSpec?**
-  The audit found **zero** occurrences in 106 corpus files, while `model M is Foo;`
-  occurs 23 times. Upstream appears to allow the `;` form only after `is`. Currently both
-  fail. Plan 04 fixes the `is` form only and deliberately leaves `extends`-without-body
-  rejected. Unverified against `microsoft/typespec` primary sources — flagged rather than
-  assumed. If wrong, it is a one-line grammar addition.
+### D8 — OQ1, corpus vendoring: domain-anonymised rewrite (owner, 2026-09-02)
+
+Ruled by the owner. Option (b) of the audit's three. See D4 above and
+[plan 04](../plans/04-grammar-corrections.md) §M6a for the executable detail.
+
+### D9 — OQ2, `model M extends Foo;`: invalid TypeSpec, and the grammar must keep rejecting it
+
+**Resolved against a primary source**, not left open. `@typespec/compiler`'s own parser
+(`dist/src/core/parser.js`, `parseModelStatement`) branches as follows:
+
+```js
+const optionalExtends = parseOptionalModelExtends();
+const optionalIs = optionalExtends ? undefined : parseOptionalModelIs();
+if (optionalIs) {
+    const tok = expectTokenIsOneOf(Token.Semicolon, Token.OpenBrace);   // `is` -> ';' OR '{'
+    if (tok === Token.Semicolon) { nextToken(); }
+    else { propDetail = parseList(ListKind.ModelProperties, …); }
+} else {
+    propDetail = parseList(ListKind.ModelProperties, …);                // everything else -> '{' required
+}
+```
+
+Only the `is` branch admits `;`. `extends` falls through to the `else` and **requires a
+body**. This matches the corpus exactly (0 occurrences of `model M extends Foo;`).
+The audit's recommendation stands and is now evidence-backed: M6c adds the `is` form only,
+and ships a negative fixture asserting `model M extends Foo;` still produces a
+`PsiErrorElement`.
+
+**Corollary the audit had not established:** the same code shows `model X is Y { … }` — `is`
+*with* a body — is equally valid, and it occurs in the corpus
+(`@typespec/http/lib/streams/main.tsp`, `model HttpStream<…> is Stream<Type> { … }`). M6c
+must accept **both** `is` forms. The audit's provisional "row 13, `interface I is Stream<T>`"
+was a regex artefact reading that same multi-line `model … is` declaration; there is no
+`interface … is` form upstream (`parseInterfaceStatement` has no `is` branch at all) and it
+is struck from the work list.
+
+### D10 — OQ3, `interface Store { values: #[1, 2, 3]; }`: invalid; option (ii)
+
+**Resolved against a primary source.** `parseInterfaceStatement` parses its body as
+`parseList(ListKind.InterfaceMembers, … parseOperationStatement …)` — interface members are
+*operation statements only*. A property in an interface body is not valid TypeSpec, no
+corpus file contains one, and **the grammar must not be widened to accept it.**
+
+Therefore option **(ii)**: `src/test/testData/lexer/kitchen-sink.tsp` stays exactly as it
+is (M2's lexer golden is untouched, and the file remains lexically motivated — its job is
+token coverage, not validity), and M6f introduces a *separate* valid-TypeSpec variant,
+`src/test/testData/parser/KitchenSink.tsp`, as the parser-side target. Plan 03 §M5d's
+standing open question is hereby closed.
+
+### D11 — OQ4, sequencing: M6a → M6b → M6c → M5.5, then M6d–M6f (owner, 2026-09-02)
+
+The owner's repository going clean is the target, and it is reached at **M6c**. Navigation
+(M5.5, [plan 02](../plans/02-navigation.md)) runs next. TypeSpec-stdlib coverage
+(M6d–M6f) follows navigation rather than preceding it.
+
+Consequence accepted knowingly: M5.5 ships while `node_modules/@typespec/**` still parses
+with errors, so *Go to declaration* into a library file will land on a squiggled page. That
+is a strictly better state than today (no navigation at all), and M6e closes it.
+
+Publishing stays deferred per [ADR 0002](0002-build-and-platform-baseline.md) D7 — no
+release decision is required now. Recorded for later: **M6c is the natural
+release-candidate point**, being the first commit at which a real-world TypeSpec repository
+is error-free in the editor.
+
+---
+
+## Primary-source facts established during this audit
+
+Read from `node_modules/@typespec/compiler/dist/src/core/parser.js` (the shipped compiler,
+same version the corpus was authored against). Recorded so no later milestone re-derives
+or re-litigates them:
+
+| Fact | Source | Consumed by |
+|---|---|---|
+| `model` body separator is `;`, with `,` **fully tolerated and valid** (`ListKind.ModelProperties`: `delimiter: Semicolon, toleratedDelimiter: Comma`, no `toleratedDelimiterIsValid: false`); trailing separator optional | `ListKind.ModelProperties` | plan 04 M6b |
+| `enum` members use the *same* list kind as model properties (`ListKind.EnumMembers = { ...ListKind.ModelProperties }`) | ibid. | plan 04 M6b |
+| `#{ … }` object-literal members are **comma**-delimited (`ListKind.ObjectLiteralProperties`) | ibid. | already correct in `TypeSpec.bnf` |
+| `scalar` bodies are `;`-delimited with `,` tolerated (`ListKind.ScalarMembers`) | ibid. | plan 04 M6e |
+| Interface bodies are `;`-delimited, `,` tolerated **but invalid** (`toleratedDelimiterIsValid: false`), and admit an optional `op` keyword prefix (`allowedStatementKeyword: Token.OpKeyword`) | `ListKind.InterfaceMembers` | plan 04 M6d |
+| `interface X extends A, B` is a **comma-separated list of reference expressions** (`parseList(ListKind.Heritage, parseReferenceExpression)`), not of full type expressions; there is no `interface … is` | `parseInterfaceStatement` | plan 04 M6d |
+| `model X is Y;` **and** `model X is Y { … }` are both valid; `model X extends Y;` is not | `parseModelStatement` | plan 04 M6c (D9) |
+| Interface members are operation statements only | `parseInterfaceStatement` | D10 |
+
+The `op`-keyword-prefixed interface member (`interface I { op foo(): X; }`) is grammatical
+upstream but has **zero** occurrences in 106 corpus files. Deprioritised to M6d's optional
+tail, not dropped.

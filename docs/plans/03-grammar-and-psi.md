@@ -15,7 +15,10 @@
 > which the project lost the ability to detect its own gaps. See
 > [ADR 0007](../adr/0007-corpus-driven-grammar-acceptance.md) for the root cause and the
 > replacement oracle, and [plan 04](04-grammar-corrections.md) for the corrective sequence
-> (M6a–M6f) that replaces §M5d. §M5a–§M5c below are retained as the historical record; do not
+> that replaces §M5d: **M6a → M6b → M6c → M5.5 (navigation) → M6d → M6e → M6f**, with the
+> owner's repository reaching zero parse errors at M6c and navigation deliberately
+> sequenced ahead of the TypeSpec-stdlib coverage milestones
+> ([ADR 0007 D11](../adr/0007-corpus-driven-grammar-acceptance.md)). §M5a–§M5c below are retained as the historical record; do not
 > re-run them.
 
 Governed by [ADR 0006](../adr/0006-grammar-toolchain.md) (toolchain, `tokenTypeFactory`,
