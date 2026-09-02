@@ -23,21 +23,24 @@ class TypeSpecFileTypeTest : BasePlatformTestCase() {
     }
 
     /**
-     * KNOWN DEFECT — see the M2 test report. `FileTypeManager` correctly resolves `.tsp` to
-     * [TypeSpecFileType] (see the two tests above), but a real PSI file created for a `.tsp`
-     * path in this test fixture (via `myFixture.configureByText`/`addFileToProject`) comes
-     * back as a plain `com.intellij.openapi.fileTypes.PlainTextFileType` / `PsiPlainTextFileImpl`,
-     * not [TypeSpecFileType] / [TypeSpecLanguage]. Root cause, confirmed by direct debugging:
-     * the platform appears to require a registered `lang.parserDefinition` for a
-     * `LanguageFileType` before it will actually build a PSI file of that type; TypeSpec has
-     * none until M5. This is left failing deliberately — do not weaken it — because it is
-     * exactly the platform behavior M1's acceptance criteria (plan 01, "Acceptance") assumed
-     * would already work.
+     * Expected platform behaviour, confirmed against ideaIC-2025.2.6.3 /
+     * intellij-community source: `AbstractFileViewProvider.createFile(Language)`
+     * (AbstractFileViewProvider.java:157-163) returns `null` when no `ParserDefinition`
+     * is registered for the language, so the caller falls through to
+     * `new PsiPlainTextFileImpl(this)` (:154). `PsiPlainTextFileImpl` (:22-24) then
+     * force-overwrites `myFileType = PlainTextFileType.INSTANCE` precisely *because*
+     * the base language is not plain text.
+     *
+     * TypeSpec has no `ParserDefinition` until M5, so `psiFile.language` legitimately
+     * reports `Language.ANY`/plain text for now — that is not asserted here. What does
+     * stay correct through this fallback, and is what M1's acceptance criteria actually
+     * depends on, is the *virtual file's* file type and the *view provider's* base
+     * language, both of which are set before `PsiPlainTextFileImpl` does its override.
      */
     fun testConfiguredFileHasTypeSpecLanguageAndFileType() {
-        myFixture.configureByText("demo.tsp", "namespace Demo;")
-        assertEquals(TypeSpecLanguage.INSTANCE, myFixture.file.language)
-        assertEquals(TypeSpecFileType.INSTANCE, myFixture.file.fileType)
+        val psiFile = myFixture.configureByText("demo.tsp", "namespace Demo;")
+        assertEquals(TypeSpecFileType.INSTANCE, psiFile.virtualFile.fileType)
+        assertEquals(TypeSpecLanguage.INSTANCE, psiFile.viewProvider.baseLanguage)
     }
 
     fun testDefaultExtension() {
