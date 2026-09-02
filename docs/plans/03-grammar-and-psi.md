@@ -2,6 +2,21 @@
 
 > **Plan numbering is allocation order, not milestone order.** `02-navigation.md` (M5.5) was
 > written first but runs *after* this plan. Read this one first.
+>
+> **POST-M5c AUDIT, 2026-09-02 — §M5d is SUPERSEDED by [plan 04](04-grammar-corrections.md).**
+> M5a/M5b/M5c all landed as specified and their tests pass, but the acceptance oracle they
+> were closed against was self-authored. Measured against a real production TypeSpec
+> repository, the shipped grammar produces `PsiErrorElement`s in **73 of 106 files**,
+> including every substantive file in the owner's own repo. The largest gap — a decorator on
+> a model member (`@key id: string;`, 366 corpus occurrences) — was inside §M5c's declared
+> scope ("decorator applications") and shipped broken; decorators were attached to every
+> declaration rule *except* `model_property`. §M5c's withdrawal of the full-`kitchen-sink.tsp`
+> criterion in favour of an implementer-chosen subset is identified as the specific point at
+> which the project lost the ability to detect its own gaps. See
+> [ADR 0007](../adr/0007-corpus-driven-grammar-acceptance.md) for the root cause and the
+> replacement oracle, and [plan 04](04-grammar-corrections.md) for the corrective sequence
+> (M6a–M6f) that replaces §M5d. §M5a–§M5c below are retained as the historical record; do not
+> re-run them.
 
 Governed by [ADR 0006](../adr/0006-grammar-toolchain.md) (toolchain, `tokenTypeFactory`,
 recovery, goldens), [ADR 0004](../adr/0004-reference-resolution-approach.md) D7 (the PSI
