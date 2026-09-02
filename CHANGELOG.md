@@ -135,4 +135,23 @@
   - `Decorators.txt`, `AugmentDecorator.txt`, `Enum.txt` and `KitchenSinkCore.txt` parser
     goldens shift as a result (a plain string/number `value_expression` now wraps in the
     inlined `literal_type` node) and are pending hand review — not blind-rebaselined.
+  - M6b: `model_spread` is repointed from a bare `qualified_name` to a full
+    `type_expression_` so a spread can carry template arguments (`...Record<unknown>;`) the
+    same way `model_property`'s type position already does, and its trailing `;` becomes the
+    optional `member_separator_` (`'...'` keeps the pin).
+  - M6b: `enum_member` and `union_variant` both gain the same optional trailing
+    `member_separator_?` as `model_property` — upstream's `ListKind.EnumMembers` and
+    `ListKind.UnionVariants` are `ListKind.ModelProperties`-shaped (`delimiter: Semicolon,
+    toleratedDelimiter: Comma`, the tolerated form fully valid, per `@typespec/compiler`'s
+    `parser.ts`). Neither addition moves its rule's pin (`enum_member` stays `pin=2`,
+    `union_variant` stays `pin=3`) since `member_separator_?` is appended after the existing
+    sequence in both cases. `Union.txt`, `Enum.txt` and `KitchenSinkCore.txt` goldens shift
+    again (a member's trailing `,`/`;` now nests inside the member node instead of sitting
+    beside it in the body) and were hand-reviewed, not blind-rebaselined.
+  - M6b done-signal check against `corpus/real/**`: only `booking/signals/rel-union.tsp`
+    (mislabelled row5 in `BASELINE.txt`, real construct: `,`-separated union variants) was
+    actually blocked by rows 1/5/6 and is now fixed by the `union_variant` change above. The
+    other six files `BASELINE.txt` had labelled row1 are, after `model_property`'s decorator
+    fix, actually blocked by row3 (`model X is Y;`) or row4 (triple-quoted strings) — both
+    M6c scope, correctly left failing here.
 

@@ -224,7 +224,18 @@ private bad_model_member_token_ ::= bad_model_member_guard_ (IDENTIFIER | STRING
 
 private bad_model_member_guard_ ::= !('}')
 
-model_spread ::= '...' qualified_name ';' {
+// Plan 04 M6b row 6: repointed from bare `qualified_name` to a full
+// `type_expression_` so a spread can carry template arguments
+// (`...Record<unknown>;` — 11 stdlib occurrences) the same way
+// `model_property`'s type position already does; `type_expression_`'s
+// `type_reference_` still collapses to a bare `qualified_name` node when there
+// are no template args, so the plain-reference tree shape (`...Foo.Bar;`) is
+// unchanged. The trailing `';'` becomes the optional `member_separator_?`
+// (ADR 0007 primary-source facts: `ListKind.ModelProperties`'s tolerated `,`
+// applies here too — `...Foo.Bar<T, U>,` inside a model body). The `'...'` pin
+// is kept: it is still the point of no return for this alternative of
+// `model_member_`.
+model_spread ::= '...' type_expression_ member_separator_? {
   pin=1
 }
 
@@ -497,8 +508,15 @@ private bad_enum_member_token_ ::= bad_enum_member_guard_ (IDENTIFIER | STRING |
 private bad_enum_member_guard_ ::= !('}')
 
 // Plain members (`Red`) and members with a value (`Red: "red"`) — kitchen-sink's
-// `enum Color { Red: "red", Green: "green" }`.
-enum_member ::= decorator_application* identifier (':' value_expression)? {
+// `enum Color { Red: "red", Green: "green" }`. Plan 04 M6b: `ListKind.EnumMembers`
+// is literally the same `ListKind` object as `ListKind.ModelProperties` (ADR
+// 0007 primary-source facts), so `enum_member` gets the identical optional
+// trailing `member_separator_?` treatment as `model_property` — previously the
+// separator between enum members was only ever consumed one token at a time by
+// `bad_enum_member_token_`'s fallback, which worked but attributed the comma to
+// no real node. Adding it here does not move the pin: `member_separator_?` is
+// appended after the existing sequence, so `identifier` stays at position 2.
+enum_member ::= decorator_application* identifier (':' value_expression)? member_separator_? {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
@@ -523,7 +541,16 @@ private bad_union_variant_token_ ::= bad_union_variant_guard_ (IDENTIFIER | STRI
 
 private bad_union_variant_guard_ ::= !('}')
 
-union_variant ::= decorator_application* identifier ':' type_expression_ {
+// Plan 04 M6b follow-on (diagnosed against `corpus/real/booking/signals/rel-union.tsp`,
+// which BASELINE.txt mislabelled row1 -- the true blocker is a bare `,` between union
+// variants, row5's family): `ListKind.UnionVariants` is its own object upstream, distinct
+// from `ListKind.ModelProperties`/`EnumMembers`, but has the identical shape --
+// `delimiter: Semicolon, toleratedDelimiter: Comma, toleratedDelimiterIsValid: true`
+// (verified against `@typespec/compiler`'s `parser.ts`, same primary source as ADR 0007's
+// table) -- so `union_variant` gets the same optional trailing `member_separator_?` as
+// `model_property`/`enum_member`. Appended after the existing sequence, so the pin does
+// not move: `':'` stays at position 3.
+union_variant ::= decorator_application* identifier ':' type_expression_ member_separator_? {
   pin=3
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
