@@ -11,9 +11,12 @@ import simpli.fyi.plugins.typespec.psi.TypeSpecFile
 import java.io.File
 
 /**
- * M4b acceptance (ADR 0005 D5): [TypeSpecParserDefinition] — the minimal flat
- * `ParserDefinition` that gives `.tsp` files a real file language instead of the
- * `PsiPlainTextFileImpl` fallback (ADR 0003 F1).
+ * [TypeSpecParserDefinition] acceptance: `.tsp` files get a real file language instead of the
+ * `PsiPlainTextFileImpl` fallback (ADR 0003 F1). Originally written against M4b's minimal flat
+ * `ParserDefinition` (ADR 0005 D5); every assertion here turned out to be shape-agnostic (file
+ * language/type identity, lossless text round-tripping, comment leaves from the lexer) and needed
+ * no changes when M5b swapped in the real Grammar-Kit-generated parser — confirmed by re-running
+ * this class unmodified after the swap.
  */
 class TypeSpecParserDefinitionTest : BasePlatformTestCase() {
 

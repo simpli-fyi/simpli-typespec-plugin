@@ -1,19 +1,19 @@
-// ADR 0006 — Grammar-Kit toolchain seam verification (M5a).
+// TypeSpec grammar — M5b (ADR 0006 D2/D5/D6/D7, ADR 0004 D7).
 //
-// This grammar carries NO real TypeSpec syntax. Its only job is to prove the
-// generation pipeline end-to-end under IPGP 2.18.1 before ~12 real rules depend on
-// it (ADR 0006 D10, plan 03 M5a step 7): one throwaway rule exercising the
-// `mixin=` (base class) + `implements=` (hand-written interface) single-pass
-// pattern (ADR 0006 D7/F8), and the `tokenTypeFactory` bridge to the existing
-// hand-written lexer's token instances (ADR 0006 D5/F6).
+// Scope (plan 03 M5b): file skeleton, import/using/namespace statements
+// (namespace both block and blockless), and model declarations with
+// extends/is/spread/optional properties/template parameter LISTS. Template
+// *arguments* in type position (`Page<Pet>`) and every other declaration kind
+// (op/interface/enum/union/alias/scalar, decorators, type expressions) are
+// explicitly M5c — see docs/plans/03-grammar-and-psi.md.
 //
-// The "method mixin" attribute and the PSI-impl-util-class attribute (named in
-// ADR 0006 D7/F8) are BANNED in this file: both resolve via Grammar-Kit's
-// `AsmHelper` against the generator's own classpath, which cannot contain classes
-// this Gradle build has not compiled yet.
-//
-// Removed in M5b, which replaces this file with the real grammar (file / import /
-// using / namespace / model) and TypeSpecNamedElementMixin.
+// `methods=[...]` and `psiImplUtilClass` are BANNED in this file (ADR 0006
+// D7/F8): both resolve via Grammar-Kit's `AsmHelper` against the generator's
+// own classpath, which cannot contain classes this Gradle build has not
+// compiled yet. Every named declaration instead uses `mixin=` (a hand-written
+// Kotlin base class, referenced only as a string — Grammar-Kit emits an
+// `extends` clause and never loads it) plus `implements=` (a hand-written
+// interface). See psi/impl/TypeSpecNamedElementMixin.kt.
 {
   parserClass="simpli.fyi.plugins.typespec.parser.TypeSpecParser"
   parserUtilClass="com.intellij.lang.parser.GeneratedParserUtilBase"
@@ -26,9 +26,8 @@
   psiImplPackage="simpli.fyi.plugins.typespec.psi.impl"
 
   // ADR 0006 F11: named "TypeSpecTypes" (Grammar-Kit's own "<Lang>Types" convention),
-  // deliberately NOT "TypeSpecElementTypes" — that name is M4b's hand-written
-  // IFileElementType holder (TypeSpecElementTypes.FILE), which this milestone does
-  // not touch and which must keep owning getFileNodeType().
+  // deliberately NOT "TypeSpecElementTypes" — that name is the hand-written
+  // IFileElementType holder (TypeSpecElementTypes.FILE), untouched by this milestone.
   elementTypeHolderClass="simpli.fyi.plugins.typespec.psi.TypeSpecTypes"
   elementTypeClass="simpli.fyi.plugins.typespec.psi.TypeSpecElementType"
   tokenTypeClass="simpli.fyi.plugins.typespec.psi.TypeSpecTokenType"
@@ -36,28 +35,167 @@
   // instances the hand-written JFlex lexer already emits, instead of minting new ones.
   tokenTypeFactory="simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.fromNameOrText"
 
-  // Default is false; M5a wants token accessors on the generated PSI interfaces
-  // from the first rule onward (plan 03 M5a step 4).
   generateTokenAccessors=true
 
-  // Only what the throwaway rule below needs (plan 03 M5a step 5). The full token
-  // list lands with the real grammar in M5b/M5c.
+  // Only the two "external" tokens this milestone's rules need by name: STRING
+  // (import target) and IDENTIFIER (every name, ordinary or backticked — the
+  // hand-written lexer returns the same IDENTIFIER token type for both, see
+  // _TypeSpecLexer.flex). Keyword and punctuation literals below (e.g. 'model',
+  // ';', '?') are deliberately left as bare string literals, NOT declared here:
+  // empirically verified (M5b spike) that undeclared literals compile to
+  // GeneratedParserUtilBase's TEXT-based `consumeToken(builder, "model")`, which
+  // matches the source text directly and works correctly even though the
+  // hand-written lexer returns one shared KEYWORD IElementType for every
+  // keyword (ADR 0001) — declaring them here instead would route them through
+  // `tokenTypeFactory` for per-literal IElementType identity, which the shared
+  // KEYWORD token cannot support (identical instances for 'model' and
+  // 'namespace' alike) and would silently break keyword disambiguation.
   tokens=[
     IDENTIFIER='regexp:[A-Za-z_][A-Za-z0-9_]*'
+    STRING='regexp:"[^"]*"'
+    NUMBER='regexp:[0-9]+'
+    KEYWORD='regexp:[a-z]+'
   ]
 }
 
-// The root rule never gets its own PSI class/element type (Grammar-Kit assumes it
-// matches an externally-supplied root, ordinarily IFileElementType FILE — ADR 0006
-// F7). It has to be a distinct wrapper rule, not `throwaway` itself, or the seam
-// check below would never generate a `TypeSpecThrowawayImpl` to inspect.
-root ::= throwaway
+// The top-level rule never gets its own PSI class or element type: Grammar-Kit
+// inlines it directly under the `root` IElementType the platform supplies
+// (TypeSpecElementTypes.FILE, via ParserDefinition.getFileNodeType() /
+// TypeSpecParser.parseLight's `exit_section_(..., root_, ...)`) — verified
+// empirically against a scratch grammar before writing this file (ADR 0006 F7).
+typespec_file ::= top_level_item_*
 
-// Throwaway seam-verification rule (ADR 0006 D10.1, plan 03 M5a step 7). Not real
-// TypeSpec syntax; carries no meaning beyond proving that the generated Java
-// `TypeSpecThrowawayImpl` compiles against, and extends, the hand-written Kotlin
-// mixin below in the same source set.
-throwaway ::= IDENTIFIER {
-  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecThrowawayMixin"
-  implements="simpli.fyi.plugins.typespec.psi.TypeSpecThrowawayIface"
+private top_level_item_ ::= import_statement | using_statement | namespace_statement | model_statement | bad_top_level_token_
+
+// ADR 0006 D6: no `recoverWhile` here, deliberately. `recoverWhile`'s built-in
+// skip mechanism re-checks its predicate even *after* a successful match of the
+// attributed rule/choice (Grammar-Kit's `exit_section_impl_`), and for a choice
+// whose last alternative (`bad_top_level_token_` below) can itself start with
+// almost any token, that post-success re-check spuriously reports the
+// just-consumed token as "unexpected" as soon as the *next* token isn't in the
+// stop set — corrupting an otherwise-successful parse (empirically verified: a
+// plain identifier property immediately after a broken one got wrapped in a
+// bogus `PsiErrorElement` this way). The explicit `bad_top_level_token_`
+// fallback alternative below is what actually provides forward progress
+// through pure garbage; recovery here does not need `recoverWhile` at all —
+// `model_member_` further down uses the identical fallback-alternative
+// technique (and the identical "no recoverWhile" reasoning) for the
+// model-property loop.
+private bad_top_level_token_ ::= bad_top_level_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | ';' | '.' | ',' | ':'
+  | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '...')
+
+// Stop set: '}' (leave an enclosing namespace block's own closing brace for
+// `namespace_block_` to consume) and the keyword that starts each known
+// top-level construct (so those are tried as *real* alternatives above, not
+// swallowed as garbage). Orphan ';' is deliberately NOT excluded — it is safe
+// to eat as garbage here since it terminates nothing on its own.
+private bad_top_level_guard_ ::= !('}' | 'model' | 'namespace' | 'using' | 'import')
+
+import_statement ::= 'import' STRING ';' {
+  pin=1
 }
+
+using_statement ::= 'using' qualified_name ';' {
+  pin=1
+}
+
+// Blockless `namespace Foo;` covers the rest of the file (TypeSpec sugar for a
+// namespace containing everything after it). Expressed here as containment —
+// the trailing top-level items become direct children of this same
+// namespace_statement node — so TypeSpecFile.getFileNamespace() is a trivial
+// "find the first namespace_statement child of the file" query, and
+// getTopLevelDeclarations() naturally stops at the blockless namespace's ';'
+// (ADR 0004 D7.4, plan 03 M5b risk note).
+namespace_statement ::= 'namespace' qualified_name (namespace_block_ | (';' top_level_item_*)) {
+  pin=1
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+private namespace_block_ ::= '{' top_level_item_* '}'
+
+model_statement ::= 'model' identifier template_parameter_list? extends_clause? is_clause? model_body {
+  pin=1
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+// Template parameter *lists* only (declaring `T` in `model Page<T>`) — resolving
+// template *arguments* in type position (`Page<Pet>`) is M5c (the `<`/`>`
+// ambiguity is deliberately out of scope here, plan 03 M5b risk note).
+template_parameter_list ::= '<' template_parameter (',' template_parameter)* '>' {
+  pin=1
+}
+
+template_parameter ::= identifier {
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+extends_clause ::= 'extends' qualified_name {
+  pin=1
+}
+
+is_clause ::= 'is' qualified_name {
+  pin=1
+}
+
+model_body ::= '{' model_member_* '}' {
+  pin=1
+}
+
+private model_member_ ::= model_property | model_spread | bad_model_member_token_
+
+// ADR 0006 D6: same reasoning as `bad_top_level_token_` above — the
+// property-loop choice does *not* use `recoverWhile`. A `recoverWhile`
+// predicate here would face the identical trap: when `model_property`
+// completely fails (e.g. a broken property missing `:`), its own `pin`
+// mechanics roll it back with zero consumption, so the built-in
+// eatMore/lastErrorPos skip can advance at most to the position of its own
+// deepest failed variant — never far enough to reach a *second* broken
+// member's leftover tokens (an orphan ';') — and if a fallback alternative is
+// *also* added to make up the difference, `recoverWhile`'s post-success
+// re-check spuriously flags the fallback's own successful single-token match
+// as an error (verified empirically both here and for `top_level_item_`).
+// This fallback alone — consume exactly one token that isn't `model_body`'s
+// own closing '}', then let the loop retry — is what lets a later, otherwise
+// well-formed property still parse as a proper `TypeSpecModelPropertyImpl`
+// after an earlier broken one.
+private bad_model_member_token_ ::= bad_model_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | ';' | '.' | ','
+  | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '...')
+
+private bad_model_member_guard_ ::= !('}')
+
+model_spread ::= '...' qualified_name ';' {
+  pin=1
+}
+
+// Pins at ':' (position 3, after the optional '?'), not at the identifier —
+// ADR 0006 D6's example verbatim: a bare identifier alone is not yet the point
+// of no return, the ':' is.
+model_property ::= identifier '?'? ':' qualified_name ';' {
+  pin=3
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+// ADR 0004 D7.1: wraps exactly one name token, ordinary or backticked — the
+// hand-written lexer returns the same IDENTIFIER token for `` `foo` `` as for
+// `foo` (see _TypeSpecLexer.flex's backtick-identifier rules), so no separate
+// token type is needed here; backtick stripping happens in
+// TypeSpecNamedElementMixin.getName() (psi/TypeSpecPsiUtil.kt).
+// `elementType=` avoids a constant-name collision in the generated TypeSpecTypes
+// holder: the rule name "identifier" would otherwise generate the same
+// `IDENTIFIER` constant name as the external IDENTIFIER token declared above —
+// two different `IElementType` fields cannot share one Java field name. The
+// generated PSI class name (`TypeSpecIdentifier`) is driven by the rule name,
+// not by this attribute, so ADR 0004 D7.1's naming is unaffected.
+identifier ::= IDENTIFIER {
+  elementType="identifier_node"
+}
+
+// ADR 0004 D7.1: a dot-separated sequence of `identifier` nodes, used UNIFORMLY
+// everywhere a name/type is referenced: using, namespace, extends, is, property
+// types, spread. Per-segment nodes are what let `Foo.Bar` be navigated segment
+// by segment later (M5.5); this milestone only builds the shape.
+qualified_name ::= identifier ('.' identifier)*

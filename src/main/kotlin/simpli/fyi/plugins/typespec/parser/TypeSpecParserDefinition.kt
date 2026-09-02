@@ -14,26 +14,25 @@ import simpli.fyi.plugins.typespec.lexer.TypeSpecLexerAdapter
 import simpli.fyi.plugins.typespec.psi.TypeSpecElementTypes
 import simpli.fyi.plugins.typespec.psi.TypeSpecFile
 import simpli.fyi.plugins.typespec.psi.TypeSpecTokenSets
+import simpli.fyi.plugins.typespec.psi.TypeSpecTypes
 
 /**
- * Minimal, flat `ParserDefinition` (ADR 0005 M4b, amending ADR 0003 D1/D2). This exists
- * only so `.tsp` files get a real [TypeSpecFile] PSI (and therefore a file language of
- * `TypeSpec` instead of the `PsiPlainTextFileImpl` fallback described in ADR 0003 F1) —
- * language-keyed extension points such as `lang.commenter` resolve by *file language*, not
- * file type, and were silently dead without this.
+ * `ParserDefinition` for `.tsp` files (ADR 0005 M4b; real grammar wired in M5b). Gives `.tsp`
+ * files a real [TypeSpecFile] PSI backed by the generated Grammar-Kit parser instead of the
+ * `PsiPlainTextFileImpl` fallback described in ADR 0003 F1 — language-keyed extension points
+ * such as `lang.commenter` resolve by *file language*, not file type, and were silently dead
+ * without this.
  *
- * The parser body ([TypeSpecFlatParser]) is a **transitional placeholder, not a permanent
- * design**: it wraps every lexer token as a flat leaf with no grammar and no composite
- * element hierarchy. It is explicitly owned by M5 Task 0, which replaces it with the
- * generated Grammar-Kit parser. Per ADR 0003 F4 (binding, unrelaxed by ADR 0005): this class
- * must never subclass or delegate to `PlainTextParserDefinition` — that reintroduces exactly
- * the `PsiPlainTextFileImpl` fallback this class exists to avoid.
+ * `getFileNodeType()`, `createFile`, `getCommentTokens`, `getStringLiteralElements` and
+ * `getWhitespaceTokens` are unchanged from M4b (ADR 0006 F7: `TypeSpecElementTypes.FILE` stays
+ * the same `IFileElementType` *instance* the generated parser's root rule (`typespec_file`) is
+ * handed at parse time — Grammar-Kit never generates its own file element type).
  */
 class TypeSpecParserDefinition : ParserDefinition {
 
     override fun createLexer(project: Project?): Lexer = TypeSpecLexerAdapter()
 
-    override fun createParser(project: Project?): PsiParser = TypeSpecFlatParser()
+    override fun createParser(project: Project?): PsiParser = TypeSpecParser()
 
     override fun getFileNodeType(): IFileElementType = TypeSpecElementTypes.FILE
 
@@ -43,12 +42,7 @@ class TypeSpecParserDefinition : ParserDefinition {
 
     override fun getStringLiteralElements(): TokenSet = TypeSpecTokenSets.STRINGS
 
-    override fun createElement(node: ASTNode): PsiElement =
-        throw UnsupportedOperationException(
-            "TypeSpecParserDefinition has no composite element types yet (ADR 0005 M4b) — " +
-                "the flat parser never produces a node other than the file root. Encountering " +
-                "this means M5's real grammar is needed, not a silently-wrong PSI element."
-        )
+    override fun createElement(node: ASTNode): PsiElement = TypeSpecTypes.Factory.createElement(node)
 
     override fun createFile(viewProvider: FileViewProvider): PsiFile = TypeSpecFile(viewProvider)
 }

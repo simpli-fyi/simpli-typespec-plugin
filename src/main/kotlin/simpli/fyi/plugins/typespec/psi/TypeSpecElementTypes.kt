@@ -4,10 +4,13 @@ import com.intellij.psi.tree.IFileElementType
 import simpli.fyi.plugins.typespec.TypeSpecLanguage
 
 /**
- * The single root node type for the flat parser tree (ADR 0005 M4b). There is only ever
- * one composite element type in the tree today: the file itself. Every other node under it
- * is a flat leaf token (see `TypeSpecFlatParser`). This is a transitional shape owned by
- * M5 Task 0, which introduces real composite element types from the generated grammar.
+ * The single [IFileElementType] for `.tsp` files, unchanged since ADR 0005 M4b (ADR 0006 F7).
+ * Grammar-Kit never generates a file element type of its own — the generated parser's root
+ * rule (`typespec_file` in `TypeSpec.bnf`) is handed this exact instance at parse time via
+ * `TypeSpecParserDefinition.getFileNodeType()`, and inlines directly under it instead of
+ * declaring a colliding element type. Every other composite node in the tree (`model`,
+ * `namespace`, etc.) is one of the real element types Grammar-Kit generates into
+ * `TypeSpecTypes` from M5b onward.
  */
 object TypeSpecElementTypes {
     @JvmField

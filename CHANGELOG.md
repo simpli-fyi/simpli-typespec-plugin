@@ -54,3 +54,33 @@
   to the same token instances the JFlex lexer already emits. `TypeSpecElementType` added for
   future composite element types. `TypeSpecParserDefinition`/`TypeSpecFlatParser`/
   `TypeSpecElementTypes`/`plugin.xml` are untouched — the flat parser ships as-is until M5b.
+- M5b: the real Grammar-Kit grammar (`docs/plans/03-grammar-and-psi.md` M5b,
+  `docs/adr/0004-reference-resolution-approach.md` D7). `TypeSpec.bnf` now covers
+  `typespec_file`/`import_statement`/`using_statement`/`namespace_statement` (block and
+  blockless — the blockless form contains the rest of the file as children, so
+  `TypeSpecFile.getFileNamespace()` is a trivial first-child query)/`model_statement` with
+  `extends`/`is`/spread (`...Base`)/optional properties/template parameter *lists* (template
+  *arguments*, e.g. `Page<Pet>`, stay out of scope for M5c). Backtick identifiers need no
+  separate token — the lexer already returns the same `IDENTIFIER` for both, and
+  `TypeSpecIdentifier`/`TypeSpecQualifiedName` are used uniformly everywhere a name is
+  referenced. `TypeSpecParserDefinition` now wires the generated `TypeSpecParser` and
+  `TypeSpecTypes.Factory.createElement`, replacing the throwaway
+  `UnsupportedOperationException`; `TypeSpecFlatParser` and the M5a throwaway seam files
+  (`TypeSpecThrowawayIface`/`TypeSpecThrowawayMixin`) are deleted. Added the hand-written
+  named-element contract (ADR 0004 D7.2/D7.3, ADR 0006 D7): `TypeSpecNamedElement` (a bare
+  `PsiNameIdentifierOwner`), `TypeSpecNamedElementMixin` (implements `getNameIdentifier`
+  /`getName`/`getTextOffset`/`setName` directly — no `methods=[...]`/`psiImplUtilClass`, both
+  banned repo-wide), and `TypeSpecPsiUtil` (plain Kotlin helpers, not a `psiImplUtilClass`)
+  for `namespace_statement`/`model_statement`/`model_property`/`template_parameter`.
+  `TypeSpecFile` gained `getImportStatements()`/`getUsingStatements()`/`getFileNamespace()`
+  /`getTopLevelDeclarations()` (ADR 0004 D7.4). Grammar recovery (ADR 0006 D6) uses a
+  fallback "consume one non-terminator token" alternative in both the top-level and
+  model-property loops rather than `recoverWhile` on those loops directly — `recoverWhile`'s
+  built-in eatMore/lastErrorPos skip cannot make any progress on input matching *no*
+  alternative at all, and combining it with a catch-all fallback alternative causes it to
+  spuriously flag the fallback's own successful match as an error (both verified
+  empirically while writing this grammar). New tests: `TypeSpecParsingTest` (14
+  `ParsingTestCase` golden-tree fixtures, goldens manually reviewed per ADR 0006 D8) and
+  `TypeSpecPsiContractTest` (named-element contract + `TypeSpecFile` accessors — caught a
+  real bug in `TypeSpecPsiUtil.findNameIdentifier()` misidentifying a property's type as its
+  name). `kitchen-sink.tsp` is not expected to parse error-free yet (M5c constructs).
