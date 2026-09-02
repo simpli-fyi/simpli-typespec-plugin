@@ -45,4 +45,4 @@ interface Store {
    comment */
 
 // a stray, unlexable character below demonstrates the "Bad character" colour
-model Bad { x: € }
+model Bad { x:  }
