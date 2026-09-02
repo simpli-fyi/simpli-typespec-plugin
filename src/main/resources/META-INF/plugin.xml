@@ -1,0 +1,15 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <id>dev.tsp.intellij.typespec</id>
+    <name>TypeSpec (Community)</name>
+    <vendor email="nathalie.mk.ua@gmail.com">nathalie.mk.ua@gmail.com</vendor>
+    <description><![CDATA[
+        <p>TypeSpec (.tsp) syntax highlighting for IntelliJ IDEA Community Edition.</p>
+        <p>Works on a bare Community install: no LSP, no Node.js, no Ultimate-only APIs.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+    </extensions>
+</idea-plugin>
