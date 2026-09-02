@@ -36,17 +36,18 @@ Conventions used throughout:
 | M4b | Minimal flat `ParserDefinition` | `.tsp` gets real `TypeSpecFile` PSI so M4's language-keyed EPs resolve. No grammar (ADR 0005). | ✅ `ce92694` |
 | **M5a** | **Grammar-Kit toolchain** | **IPGP 2.18.1 + `grammarkit` subplugin; `generateParser` runs and reuses the hand-written lexer's tokens. No TypeSpec grammar. (ADR 0006)** | **← NEXT** |
 | M5b | Core grammar + PSI contract | Real tree for file/`import`/`using`/`namespace`/`model`; `TypeSpecIdentifier`, `TypeSpecQualifiedName`, `PsiNameIdentifierOwner` everywhere (ADR 0004 D7). Flat parser deleted. | planned |
-| M5c | Remaining grammar | `op`/`interface`/`enum`/`union`/`alias`/`scalar`, decorators, type expressions. Spellchecking tail (gated). `kitchen-sink.tsp` parses clean. | planned |
+| M5c | Remaining grammar | `op`/`interface`/`enum`/`union`/`alias`/`scalar`, decorators, type expressions. Spellchecking tail (**ratified**). `KitchenSinkCore.tsp` (the M5c-scoped subset) parses clean. | planned |
+| M5d | Deferred-construct sweep | `const` + value expressions, `#suppress`/`#deprecated` directives, function-type expressions + `dec`/`fn`/`extern`. Full unmodified `kitchen-sink.tsp` parses clean. **Not a prerequisite for M5.5.** | scoped, not planned |
 | M5.5 | Reference resolution + navigation | Ctrl-click / Go To Declaration / Find Usages on a type reference. (ADR 0004, [plan 02](02-navigation.md)) | planned |
 | M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. Annotator + completion build on M5.5's resolver. | planned |
 | M6.5 | Rename, Go To Symbol, stub index | The write-side refactoring and the index that makes project-wide symbol search affordable. (ADR 0004 D6) | planned |
 | M7 | Compatibility + release readiness | Verified across the whole supported IDE range; CI green; metadata complete. | planned |
 
 Detail plans: [01](01-lexer-and-highlighter.md) (M1–M3), [03](03-grammar-and-psi.md)
-(M5a–M5c), [02](02-navigation.md) (M5.5). **Plan file numbers are allocation order, not
+(M5a–M5d), [02](02-navigation.md) (M5.5). **Plan file numbers are allocation order, not
 milestone order** — plan 03 runs before plan 02.
 
-M5 was a single milestone; it is split into M5a/M5b/M5c by
+M5 was a single milestone; it is split into M5a/M5b/M5c (+M5d) by
 [plan 03](03-grammar-and-psi.md), using the split authorisation the original §M5 already
 granted. M5.5 and M6.5 are decimal by [ADR 0004](../adr/0004-reference-resolution-approach.md)
 D5 — renumbering M6/M7 would silently falsify ADR 0002 and ADR 0003, which cite them by
@@ -353,7 +354,7 @@ and still passing.
 
 ---
 
-## M5 — Grammar-Kit parser and PSI → **split into M5a / M5b / M5c**
+## M5 — Grammar-Kit parser and PSI → **split into M5a / M5b / M5c (+ M5d)**
 
 **Goal.** A parse tree for TypeSpec. This is where ADR 0001's staged plan cashes in, and
 what unblocks M5.5, M6 and M6.5.
@@ -373,7 +374,8 @@ run.
 |---|---|
 | **M5a** | IPGP `2.16.0 → 2.18.1` (**ratified**); apply `org.jetbrains.intellij.platform.grammarkit`; migrate the hand-rolled JFlex `JavaExec` to `generateLexer`; add `generateParser` (**ADR 0006 D2's explicit wiring — `srcDir(taskProvider)` is broken on 2.18.1, F9**); bridge M2's `TypeSpecTokenTypes` into the BNF via `tokenTypeFactory`; verify the Kotlin-mixin/generated-Java seam (**the `mixin=` spike is cancelled — D7 is decided**). **No TypeSpec grammar.** ([ADR 0006](../adr/0006-grammar-toolchain.md)) |
 | **M5b** | Grammar for file / `import` / `using` / `namespace` / `model`. `TypeSpecIdentifier` + `TypeSpecQualifiedName`. Every declaration a `PsiNameIdentifierOwner` with correct `getTextOffset()`. `TypeSpecFile` accessors. Swap `createParser`/`createElement`; **delete `TypeSpecFlatParser`**. ([ADR 0004](../adr/0004-reference-resolution-approach.md) D7) |
-| **M5c** | `op`, `interface`, `enum`, `union`, `alias`, `scalar`, decorator applications, type expressions. Spellchecking tail. `kitchen-sink.tsp` parses with zero `PsiErrorElement`. |
+| **M5c** | `op`, `interface`, `enum`, `union`, `alias`, `scalar`, decorator applications (incl. `@@` augment statements), type expressions (union / intersection / array / template arguments / `void`,`never`,`unknown`), coarse `#{}`/`#[]`. Spellchecking tail. **`src/test/testData/parser/KitchenSinkCore.tsp`** — the M5c-achievable *subset* of the M2 lexer fixture — parses with zero `PsiErrorElement`. ([plan 03](03-grammar-and-psi.md) §M5c "Kitchen-sink scope resolution") |
+| **M5d** | The three constructs M5c defers because they are out of plan 00 §M5's declared scope: `const` declarations + a real value-expression grammar; statement-level `#suppress`/`#deprecated` directives; function-type expressions `(p: T) => R` with the `dec`/`fn`/`extern` bucket. Done-signal: the **unmodified** `src/test/testData/lexer/kitchen-sink.tsp` parses with zero `PsiErrorElement`. Runs before or after M5.5 at the owner's discretion. |
 
 **Task 0 — ~~land~~ *replace* the `ParserDefinition`.** ~~Per
 [ADR 0003](../adr/0003-parser-definition-timing.md) D1/D2 this was deliberately kept out of
@@ -425,13 +427,17 @@ ratification. The plugin then ships exactly **two** `<depends>`; a third needs a
 follow-on milestone if wanted": they are **M5.5** ([plan 02](02-navigation.md)) and **M6.5**,
 scheduled by [ADR 0004](../adr/0004-reference-resolution-approach.md) D5/D6.
 
-**Verification** (each of M5a/M5b/M5c independently)
+**Verification** (each of M5a/M5b/M5c/M5d independently)
 ```bash
 ./gradlew clean build test verifyPlugin
 ```
 
-**Risks.** `<`/`>` template-argument ambiguity is the known hard part; it is deliberately
-confined to **M5c**, so it cannot destabilise the milestone that fixes the PSI contract.
+**Risks.** ~~`<`/`>` template-argument ambiguity is the known hard part.~~ **CLOSED** —
+upstream TypeSpec (`parser.ts`, `spec.emu.html`) defines no relational/comparison expression
+grammar, so `<`/`>` are unambiguous bracket delimiters; plain recursive descent with `pin=1`
+suffices ([plan 03](03-grammar-and-psi.md) §M5c). M5c's real landmine is the keywordized
+`void`/`never`/`unknown` intrinsics, which need explicit type-expression alternatives.
+Template arguments remain confined to **M5c**.
 Error recovery is designed in from the first rule
 ([ADR 0006](../adr/0006-grammar-toolchain.md) D6), not retrofitted. Golden parse trees must
 be **read**, not merely regenerated ([ADR 0006](../adr/0006-grammar-toolchain.md) D8), and

@@ -1,4 +1,4 @@
-# Plan 03 — Grammar-Kit parser and PSI (M5a → M5c)
+# Plan 03 — Grammar-Kit parser and PSI (M5a → M5c, + M5d scoped)
 
 > **Plan numbering is allocation order, not milestone order.** `02-navigation.md` (M5.5) was
 > written first but runs *after* this plan. Read this one first.
@@ -327,8 +327,10 @@ src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecElementTypes.kt   (modif
   [ADR 0003](../adr/0003-parser-definition-timing.md) D4 ban on `checkHighlighting` /
   `EditorTestUtil.testFileSyntaxHighlighting` **lifts here** — but do not rush to use them;
   lifting the ban is not a mandate to rewrite green tests.
-- `kitchen-sink.tsp` is **not** yet expected to parse error-free — it exercises M5c
-  constructs. Assert that instead in M5c.
+- `kitchen-sink.tsp` is **not** expected to parse error-free — not in M5b and **not in M5c
+  either**. M5c asserts zero errors over its own scoped subset fixture
+  (`src/test/testData/parser/KitchenSinkCore.tsp`); the unmodified lexer fixture is
+  **M5d's** done-signal. See M5c's "Kitchen-sink scope resolution".
 - ⚠ **`-Didea.tests.overwrite.data=true` regenerates goldens; it does not validate them.**
   Read every generated tree and confirm it is correct before committing
   ([ADR 0006](../adr/0006-grammar-toolchain.md) D8). A wrong golden is frozen forever.
@@ -342,10 +344,12 @@ src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecElementTypes.kt   (modif
 ```
 
 **Risks / open questions**
-- **`<` / `>` template-argument ambiguity** is the known hard part of TypeSpec's grammar.
-  M5b only needs template *parameter lists* on declarations (`model Page<T>`), not template
-  *arguments* in type position (`Page<Pet>`) — that is M5c. Deliberate: it keeps the hardest
-  ambiguity out of the milestone that fixes the PSI contract.
+- ~~**`<` / `>` template-argument ambiguity.**~~ **CLOSED — there never was one.**
+  `tsp-intellij-researcher` verified against upstream `microsoft/typespec` `parser.ts` and
+  `spec.emu.html` that TypeSpec has **no relational/comparison expression grammar**, so
+  `<` / `>` are unambiguous bracket delimiters in `TemplateParameters` and
+  `TemplateArguments` only. M5b's split (parameter lists here, arguments in M5c) remains a
+  fine *sizing* decision, but it was never a risk-avoidance one.
 - If the M5a seam check failed, **M5b does not start** — ADR 0006 D7 needs revising first.
   There is no longer a `psiImplUtilClass` fallback; revision 1's was based on a wrong claim
   ([ADR 0006](../adr/0006-grammar-toolchain.md) F8). ADR 0004 D2's per-element `CachedValue`
@@ -360,17 +364,80 @@ src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecElementTypes.kt   (modif
 
 ### M5c — Remaining declarations, type expressions, spellchecking
 
-**Goal.** The rest of plan 00 §M5's grammar list, on the shape M5b fixed. `kitchen-sink.tsp`
-parses with no `PsiErrorElement`.
+> **Revision 3 (2026-09-02).** Rewritten after `tsp-intellij-researcher`'s deep read of
+> upstream `microsoft/typespec` (`parser.ts`, `spec.emu.html`). Three changes, all recorded
+> below so `tsp-dev` does not rediscover them: the `<`/`>` ambiguity risk is **closed**; the
+> `TypeOptional` fixture is **repointed** (there is no `T?` type suffix in TypeSpec);
+> `void`/`never`/`unknown` need **explicit grammar alternatives**. The
+> `kitchen-sink.tsp` acceptance criterion is **replaced** — see "Kitchen-sink scope
+> resolution" below — because the real fixture contains constructs outside this
+> milestone's scope.
 
-**In scope.** `op`, `interface`, `enum`, `union`, `alias`, `scalar`; decorator applications;
-type expressions (union `|`, intersection `&`, array `[]`, template *arguments* `<>`,
-optional `?`). Named-element contract extended to `op`, `interface`, `enum` + enum member,
-`union` + union variant, `alias`, `scalar`
+**Goal.** The rest of plan 00 §M5's grammar list, on the shape M5b fixed:
+every remaining declaration kind, decorator applications, and a real type-expression
+grammar — verified against an M5c-scoped kitchen-sink subset that parses with zero
+`PsiErrorElement`.
+
+**In scope.** `op`, `interface`, `enum`, `union`, `alias`, `scalar`; decorator applications
+(`@dec`, `@@dec` augment-decorator statements); type expressions (union `|`, intersection
+`&`, array `[]`, tuple/parenthesised, template *arguments* `<>`, and the three keywordized
+intrinsics `void` / `never` / `unknown`); a **coarse** `#{ … }` / `#[ … ]` value-literal rule
+(enough to appear as a decorator argument or a default value, no inner structure).
+Named-element contract extended to `op`, `interface`, `enum` + enum member, `union` + union
+variant, `alias`, `scalar`
 ([ADR 0004](../adr/0004-reference-resolution-approach.md) D7.2's full list).
 
-**Explicitly deferred** (unchanged from plan 00 §M5): projections; `dec`/`fn`/`extern`
-declarations; value literals `#{}` / `#[]` beyond a coarse rule.
+**Explicitly deferred** (plan 00 §M5's list, now itemised because M5d consumes it):
+- projections;
+- `dec` / `fn` / `extern` declarations;
+- **function-type expressions** — `(p: T) => R`, and the `op f(): void => void;` return-type
+  form. Upstream `spec.emu.html` §FunctionTypeExpression; `fn`-adjacent, so it lands with the
+  `fn` bucket, not here;
+- **`const` declarations** — these require a real *value*-expression grammar (string /
+  number / member-access / tuple / object literals), which is exactly the "value literals
+  beyond a coarse rule" exclusion. Not cheap, not in M5c;
+- **statement-level directives** — `#suppress "deprecated" "legacy"`, `#deprecated`. The
+  lexer already returns the whole `#suppress` as one `DIRECTIVE` token, so the *rule* is
+  cheap, but its **placement** (a prefix attachable to any statement) is not, and nothing in
+  plan 00 scoped it. M5d;
+- value literals `#{}` / `#[]` **beyond** the coarse rule above.
+
+#### Kitchen-sink scope resolution — DECIDED: option (a), a scoped subset fixture
+
+Revision 2's acceptance criterion ("`src/test/testData/lexer/kitchen-sink.tsp` parses with
+zero `PsiErrorElement`") is **unachievable inside M5c's declared scope and is withdrawn.**
+Audit of the real file found four out-of-scope constructs:
+
+| Line | Construct | Bucket |
+|---|---|---|
+| 21 | `#suppress "deprecated" "legacy"` | statement-level directive — deferred |
+| 26–29 | `const text = """…"""` | `const` + value expressions — deferred |
+| 33 | `op transform(): void => void;` | FunctionTypeExpression — `fn` bucket, deferred |
+| 35–37 | `interface Store { values: #[1, 2, 3]; }` | interface member that is a *property*, not an operation signature — not valid TypeSpec; M2 fixture content chosen for **lexical** coverage only |
+
+`kitchen-sink.tsp` was written in M2 to hit every *token* kind, not to be a syntactically
+valid program. It keeps that job. Two consequences:
+
+1. **M5c gets its own fixture**: `src/test/testData/parser/KitchenSinkCore.tsp` — the
+   **M5c-achievable subset of kitchen-sink, not the full file**. Derive it from
+   `kitchen-sink.tsp` by keeping lines 1–20, 22–24 and 31 verbatim (imports, using, decorated
+   blockless namespace with a `#{}` argument, doc comments, the full `Widget` model with
+   template parameter, optional/defaulted/backticked/union-typed/spread properties, the
+   `@@doc` augment statement, the decorated `op read` with a template *argument* and a union
+   return, the `enum`, the `alias`) and by **replacing** the four out-of-scope items with
+   in-scope equivalents that keep the coverage intent:
+   - drop line 21 (`#suppress`) — nothing replaces it (line 22's `op read` is kept);
+   - drop lines 26–29 (`const`) — nothing replaces it;
+   - replace line 33 with `op transform(input: Widget<string>[]): void;` (keeps `void`,
+     array and template-argument coverage, drops `=>`);
+   - replace lines 35–37 with a real operation-bearing interface,
+     `interface Store { list(): Widget<string>[]; get(id: string): Widget<string> | Error; }`;
+   - keep the trailing comments (lines 39–41).
+   The file must carry a header comment stating verbatim: *"M5c-achievable subset of
+   src/test/testData/lexer/kitchen-sink.tsp — NOT the full file. Constructs deferred to M5d
+   (`const`, `#suppress` directives, function-type expressions) are deliberately absent."*
+2. **The full-file zero-error parse moves to M5d** (below), which exists precisely to close
+   the gap. `kitchen-sink.tsp` itself is not touched, moved, or edited by M5c.
 
 **Files**
 ```
@@ -378,11 +445,33 @@ src/main/grammars/TypeSpec.bnf                                           (modify
 src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecPsiUtil.kt        (modify)
 src/main/kotlin/simpli/fyi/plugins/typespec/spellchecker/TypeSpecSpellcheckingStrategy.kt (create — RATIFIED, ships)
 src/main/resources/META-INF/plugin.xml                                   (modify — spellchecker.support + 2nd <depends>, RATIFIED)
+src/test/testData/parser/KitchenSinkCore.tsp                             (create — subset fixture, see above)
 ```
+
+**Approach — settled grammar decisions (do not re-litigate)**
+
+- **`<` / `>` is plain recursive descent.** TypeSpec has **no relational or comparison
+  expression grammar at all** — `<` and `>` occur in exactly two productions,
+  `TemplateParameters` (M5b, shipped) and `TemplateArguments`
+  (`tsp-intellij-researcher`, from upstream `parser.ts` + `spec.emu.html`). They are
+  unambiguous bracket delimiters. Write `template_argument_list ::= '<' … '>' { pin=1 }`
+  exactly like the existing `template_parameter_list`. **No external rules, no token
+  remapping, no `GeneratedParserUtilBase` tricks.**
+- **`void` / `never` / `unknown` must be explicit alternatives** in the primary
+  type-expression rule. The lexer keywordizes all three (`_TypeSpecLexer.flex` lines
+  103–105, matching upstream), so they can **never** reach the `qualified_name` /
+  `IDENTIFIER` path. Omitting them makes `op f(): void;` fail to parse. This — not `<`/`>` —
+  is M5c's actual landmine.
+- **There is no `T?` type suffix in TypeSpec.** Optionality is a property of `ModelProperty`
+  / `FunctionParameter` (`identifier '?'? ':' expression`), which **M5b's `model_property`
+  rule already implements correctly**. Do not add `'?'` to any type-expression rule.
+- Type-expression precedence, loosest to tightest: union `|` → intersection `&` → array
+  `[]` postfix → primary (`qualified_name` with optional `template_argument_list`,
+  `void`/`never`/`unknown`, string/number literal, parenthesised, tuple `[T, U]`).
 
 **Spellchecking tail — ✅ RATIFIED, ships in M5c.** `spellchecker.support` lives in
 `com.intellij.modules.spellchecker` and needs a **second `<depends>`**. Both halves of the
-gate are now cleared:
+gate are cleared:
 - **CE availability CONFIRMED** by direct verification against the pinned `IC-252.28539.97` —
   `product-info.json` lists it, and
   `lib/modules/intellij.spellchecker.jar!/intellij.spellchecker.xml` declares only
@@ -398,19 +487,30 @@ needs a new ADR. `tsp-dev` implements it in M5c without further ratification; th
 
 **Acceptance (`tsp-tester`)**
 - `TypeSpecParsingTest` grows a `.tsp`/`.txt` pair per new area: `Operation`, `Interface`,
-  `Enum`, `Union`, `Alias`, `Scalar`, `Decorators`, `TypeUnion`, `TypeIntersection`,
-  `TypeArray`, `TypeTemplateArgs`, `TypeOptional`. Same golden-review discipline
+  `Enum`, `Union`, `Alias`, `Scalar`, `Decorators`, `AugmentDecorator`, `TypeUnion`,
+  `TypeIntersection`, `TypeArray`, `TypeTemplateArgs`, `TypeIntrinsics`, and
+  `OptionalPropertyComplexType`. Same golden-review discipline
   ([ADR 0006](../adr/0006-grammar-toolchain.md) D8).
-- **`KitchenSink` fixture parses with zero `PsiErrorElement`** — `doTest(true, true)` over
-  `src/test/testData/lexer/kitchen-sink.tsp` (copied, not moved; M2's lexer test owns the
-  original path). This is M5's real done-signal.
+  - **`TypeIntrinsics.tsp`** must contain at least `op f(): void;`, `op g(): never;`,
+    `op h(): unknown;` — it is the regression guard for the keywordized-intrinsics landmine.
+  - **`OptionalPropertyComplexType.tsp`** *replaces* revision 2's `TypeOptional` fixture,
+    which is deleted from this plan: it asserted a `T?` type suffix that does not exist in
+    TypeSpec. The replacement asserts that M5b's optional-**property** behaviour still holds
+    once the property type is a full type expression — e.g. `model M { a?: string | null;
+    b?: Widget<string>[]; }`.
+- **`KitchenSinkCore` parses with zero `PsiErrorElement`** — `doTest(true, true)` over
+  `src/test/testData/parser/KitchenSinkCore.tsp`, the M5c-achievable subset defined in
+  "Kitchen-sink scope resolution" above. **This is M5c's real done-signal.** The full
+  `src/test/testData/lexer/kitchen-sink.tsp` is **not** expected to parse error-free in M5c
+  and must not be copied, edited, or moved by this milestone; it is M5d's done-signal.
 - `TypeSpecPsiContractTest` extended to every declaration kind added here.
 - Spellchecking **ships**: `./gradlew verifyPlugin` stays clean **and** `runIde` on a bare
   Community install still loads the plugin. `tsp-tester` reports the verbatim `<depends>`
   list, which must be exactly `com.intellij.modules.platform` +
   `com.intellij.modules.spellchecker` — no more, no less.
-- Full regression sweep, no edits to M5b's goldens. **A changed M5b golden means M5c
-  destabilised the core grammar — report it, do not re-baseline it.**
+- Full regression sweep, no edits to M5b's goldens (`ModelOptionalProperty.txt` included —
+  it is the second half of the optionality regression guard). **A changed M5b golden means
+  M5c destabilised the core grammar — report it, do not re-baseline it.**
 
 **Done when**
 ```bash
@@ -418,22 +518,64 @@ needs a new ADR. `tsp-dev` implements it in M5c without further ratification; th
 ```
 
 **Risks / open questions**
-- **`<` / `>` ambiguity lands here in full.** `Page<Pet>` vs a less-than expression. Expect to
-  need Grammar-Kit external rules or careful `pin` placement. This is the single most likely
-  reason M5c stalls; if it does, split template arguments into M5d rather than weakening the
-  recovery rules to make it "work".
-- Decorators are one lexer token by design (`@Ns.name`,
-  [ADR 0004](../adr/0004-reference-resolution-approach.md) F6). The grammar wraps that token
-  in a decorator-application node; it does **not** split it. Splitting is a separate,
-  breaking change to M2/M3 tests — [ADR 0004](../adr/0004-reference-resolution-approach.md)
-  open question 1, owner's call.
+- ~~**`<` / `>` template-argument ambiguity.**~~ **CLOSED.** `tsp-intellij-researcher`
+  verified against upstream `microsoft/typespec` `parser.ts` and `spec.emu.html` that
+  TypeSpec defines **no relational/comparison expression grammar**, so there is no competing
+  production for `<` / `>`; they are pure bracket delimiters in `TemplateParameters` and
+  `TemplateArguments` only. Ordinary recursive descent with `pin=1` on `<` suffices. The
+  revision-2 contingency "split template arguments into M5d if it stalls" is **withdrawn** —
+  template arguments stay in M5c.
+- **Keywordized intrinsics are the real landmine** (see Approach). If `op f(): void;`
+  produces a `PsiErrorElement`, the cause is a missing alternative in the primary
+  type-expression rule, not a lexer bug — do **not** de-keywordize `void`/`never`/`unknown`
+  in the flex file; that would break M2/M3 highlighting goldens.
+- Decorators are one lexer token by design (`@Ns.name` → `DECORATOR`, `@@Ns.name` →
+  `AUGMENT_DECORATOR`; [ADR 0004](../adr/0004-reference-resolution-approach.md) F6). The
+  grammar wraps that token in a decorator-application / augment-decorator-statement node; it
+  does **not** split it. Splitting is a separate, breaking change to M2/M3 tests —
+  [ADR 0004](../adr/0004-reference-resolution-approach.md) open question 1, owner's call.
+- Type-expression rules are left-recursive by nature; Grammar-Kit handles this with
+  precedence-ordered rules, not with PEG left recursion. If `tsp-dev` finds itself writing
+  `expression ::= expression '|' expression`, stop and use the layered precedence chain in
+  Approach instead.
 - ~~Second `<depends>` is unratified.~~ ✅ Ratified and CE-confirmed (above). No longer a risk.
+
+---
+
+### M5d — Deferred-construct sweep (full kitchen-sink parse) — SCOPED, NOT YET PLANNED
+
+**Not a prerequisite for M5.5.** [Plan 02](02-navigation.md)'s prerequisite remains **M5c
+green**; nothing in M5.5's resolver touches M5d's constructs. M5d may run before or after
+M5.5 at the owner's discretion.
+
+**Goal.** Close the three constructs M5c deferred, so that the *unmodified*
+`src/test/testData/lexer/kitchen-sink.tsp` parses with zero `PsiErrorElement`:
+1. statement-level directives (`#suppress`, `#deprecated`) — one `DIRECTIVE` lexer token
+   plus trailing string arguments, attachable as a statement prefix;
+2. `const` declarations, which pull in a real **value**-expression grammar (multi-line
+   strings, numbers, member access, `#{}` / `#[]` with inner structure);
+3. function-type expressions `(p: T) => R` and the `op f(): void => void;` return form,
+   together with the `dec` / `fn` / `extern` declaration bucket they belong to.
+
+**Done when** `doTest(true, true)` over a copy of `kitchen-sink.tsp` in
+`src/test/testData/parser/` reports zero `PsiErrorElement` (the lexer copy at
+`src/test/testData/lexer/kitchen-sink.tsp` stays authoritative and unedited — M2's lexer test
+owns it), **and** `./gradlew clean build test verifyPlugin` is green.
+
+**Open question for the owner.** `interface Store { values: #[1, 2, 3]; }` (kitchen-sink
+lines 35–37) is a *property* in an interface body, which upstream TypeSpec does **not**
+accept — interface members are operation signatures. Before M5d starts, decide one of:
+(i) edit `kitchen-sink.tsp` to make it valid TypeSpec (touches M2's lexer golden — must be
+re-reviewed, not re-baselined); or (ii) keep the file lexically-motivated and declare M5d's
+target to be a *valid-TypeSpec* variant of it. **`tsp-dev` must not choose this silently.**
 
 ---
 
 ## After M5
 
+**M5d** (above) is scoped but not planned, and is **not** a prerequisite for anything below.
+
 [Plan 02](02-navigation.md) — **M5.5**, reference resolution and jump navigation. Its
-prerequisite is **M5c green**, not M5b: its resolver targets `model`/`enum`/`union`/
+prerequisite is **M5c green**, not M5b and not M5d: its resolver targets `model`/`enum`/`union`/
 `interface`/`alias`/`scalar`/`op`/`namespace`, and six of those eight only exist after M5c.
 Plan 02's five-point prerequisite check runs first and is authorised to stop the milestone.
