@@ -23,5 +23,14 @@
                 implementationClass="simpli.fyi.plugins.typespec.highlighting.TypeSpecSyntaxHighlighterFactory"/>
         <colorSettingsPage
                 implementation="simpli.fyi.plugins.typespec.highlighting.TypeSpecColorSettingsPage"/>
+        <lang.commenter
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.editor.TypeSpecCommenter"/>
+        <lang.braceMatcher
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.editor.TypeSpecBraceMatcher"/>
+        <lang.quoteHandler
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.editor.TypeSpecQuoteHandler"/>
     </extensions>
 </idea-plugin>

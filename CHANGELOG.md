@@ -24,3 +24,10 @@
   (`colorSettings/demo.tsp.txt`) exercising every category. Display strings now live in a
   new `messages.TypeSpecBundle` resource bundle (`TypeSpecBundle.kt`), registered via
   `lang.syntaxHighlighterFactory` and `colorSettingsPage` in `plugin.xml`.
+- M4: editor conveniences that need no PSI — `TypeSpecCommenter` (`//` line, `/* */` block
+  comments, `lang.commenter`), `TypeSpecBraceMatcher` (`{}` / `()` / `[]` and the `#{` / `#[`
+  value-literal openers, `lang.braceMatcher`, ships at risk per
+  `docs/adr/0003-parser-definition-timing.md` D5), and `TypeSpecQuoteHandler`
+  (auto-close/auto-skip for `"..."` / `"""..."""`, `lang.quoteHandler`). TODO-comment
+  highlighting is deferred to M5, where `getCommentTokens()` on the incoming
+  `ParserDefinition` will feed `TodoIndexer` for free (ADR 0003 D1/D2).
