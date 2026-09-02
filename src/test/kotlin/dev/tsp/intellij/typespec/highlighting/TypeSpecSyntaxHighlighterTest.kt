@@ -207,8 +207,16 @@ class TypeSpecSyntaxHighlighterTest : BasePlatformTestCase() {
     }
 
     // ---- 6. demo text is well-formed ---------------------------------------------
+    //
+    // demoText is a colour SHOWCASE for ColorSettingsPage, not valid TypeSpec: it must
+    // deliberately contain one BAD_CHARACTER token so TSP_BAD_CHARACTER previews live in
+    // Settings | Editor | Color Scheme | TypeSpec. That is why this is split into two
+    // tests instead of one "lexes cleanly" test -- "zero BAD_CHARACTER tokens" and
+    // "exercises every descriptor including TSP_BAD_CHARACTER" cannot both hold for this
+    // fixture. Contrast with kitchen-sink.tsp (asserted elsewhere), which IS meant to be
+    // valid TypeSpec and must lex with zero BAD_CHARACTER tokens.
 
-    fun testDemoTextLexesCleanlyAndExercisesEveryDescriptor() {
+    fun testDemoTextExercisesEveryRegisteredDescriptor() {
         val page = TypeSpecColorSettingsPage()
         val demoText = page.demoText
         assertTrue("demoText must not be blank", demoText.isNotBlank())
@@ -218,13 +226,7 @@ class TypeSpecSyntaxHighlighterTest : BasePlatformTestCase() {
         val producedTypes = mutableSetOf<IElementType>()
         var lastTokenEnd = 0
         while (lexer.tokenType != null) {
-            val t = lexer.tokenType!!
-            assertTrue(
-                "demoText produced a BAD_CHARACTER token at offset ${lexer.tokenStart}: " +
-                    demoText.substring(lexer.tokenStart, minOf(lexer.tokenEnd, demoText.length)),
-                t != TokenType.BAD_CHARACTER
-            )
-            producedTypes.add(t)
+            producedTypes.add(lexer.tokenType!!)
             lastTokenEnd = lexer.tokenEnd
             lexer.advance()
         }
@@ -241,6 +243,33 @@ class TypeSpecSyntaxHighlighterTest : BasePlatformTestCase() {
         }
     }
 
+    fun testDemoTextHasExactlyOneIntentionalBadCharacter() {
+        // The one deliberate BAD_CHARACTER probe is the File Separator control character
+        // (\u001C) documented in TypeSpecLexerTest.testBadCharacter, at the fixed offset
+        // below. Any OTHER BAD_CHARACTER token would be an accidental, unlexable character
+        // slipping into the demo text -- that is what this test guards against.
+        val page = TypeSpecColorSettingsPage()
+        val demoText = page.demoText
+        val intendedOffset = demoText.indexOf('\u001C')
+        assertTrue("demoText no longer contains the intended \\u001C bad-character probe", intendedOffset >= 0)
+
+        val lexer = TypeSpecLexerAdapter()
+        lexer.start(demoText)
+        val badCharacterOffsets = mutableListOf<Int>()
+        while (lexer.tokenType != null) {
+            if (lexer.tokenType == TokenType.BAD_CHARACTER) {
+                badCharacterOffsets.add(lexer.tokenStart)
+            }
+            lexer.advance()
+        }
+
+        assertEquals(
+            "Expected exactly one BAD_CHARACTER token (the intended \\u001C probe); " +
+                "found at offsets $badCharacterOffsets",
+            listOf(intendedOffset),
+            badCharacterOffsets
+        )
+    }
     // ---- ColorSettingsPage smoke tests --------------------------------------------
 
     fun testAttributeDescriptorsNonEmpty() {
