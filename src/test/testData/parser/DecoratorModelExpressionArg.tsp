@@ -1,4 +1,4 @@
-@@package(Airlines.Ph.Cdm.Reservation.Batch, { name: "airlines.ph.cdm.reservation.batch" });
+@@package(Acme.Ex.Core.Booking.Group, { name: "acme.ex.core.booking.group" });
 
 @dec({title: "x"})
 model M {

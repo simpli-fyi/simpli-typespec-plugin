@@ -1,0 +1,67 @@
+# BASELINE.txt -- the shrinking ratchet for TypeSpecCorpusTest (ADR 0007, plan 04 M6a-M6f).
+#
+# One entry per corpus-relative path currently permitted to fail either of ADR 0007 D2's two
+# properties (a PsiErrorElement, or an unclaimed leaf token). Each entry names the primary
+# plan-04 row number responsible (see docs/plans/04-grammar-corrections.md's table); a file
+# can be affected by more than one row, only the lowest-numbered / first-fixed one is recorded
+# here as the reason it is still on this list.
+#
+# The ratchet is bidirectional and enforced by TypeSpecCorpusTest.testCorpusMatchesBaseline:
+#   - a file failing that is NOT listed here fails the test (undeclared regression);
+#   - a file listed here that now PASSES fails the test (undeclared fix -- remove the line).
+#
+# This file is deleted entirely at M6f (plan 04), once the corpus is a zero-baseline assertion.
+#
+# Format: <corpus-relative-path>  # <reason>
+real/booking/booking.tsp  # row1: decorator on a model/interface/enum member
+real/booking/signals/booking-created.tsp  # row1: decorator on a model/interface/enum member
+real/booking/signals/booking-voided.tsp  # row1: decorator on a model/interface/enum member
+real/booking/signals/group.tsp  # row1: decorator on a model/interface/enum member
+real/booking/signals/rel-union.tsp  # row5: comma-separated model member
+real/booking/signals/signals.tsp  # row3: model X is Y
+real/common/signals/foxtrot.tsp  # row1: decorator on a model/interface/enum member
+real/common/signals/payloaddata-umber-jade.tsp  # row1: decorator on a model/interface/enum member
+real/journey/signals/group.tsp  # row3: model X is Y
+real/journey/signals/signals.tsp  # row3: model X is Y
+stdlib/compiler/lib/intrinsics.tsp  # row10: scalar with body
+stdlib/compiler/lib/std/decorators.tsp  # row3: model X is Y
+stdlib/compiler/lib/std/types.tsp  # row9: valueof
+stdlib/compiler/lib/std/visibility.tsp  # row3: model X is Y
+stdlib/http/lib/auth.tsp  # row1: decorator on a model/interface/enum member
+stdlib/http/lib/decorators.tsp  # row8: extern dec/model/fn
+stdlib/http/lib/main.tsp  # row1: decorator on a model/interface/enum member
+stdlib/http/lib/private.decorators.tsp  # row5: comma-separated model member
+stdlib/http/lib/streams/main.tsp  # row3: model X is Y
+stdlib/json-schema/lib/main.tsp  # row5: comma-separated model member
+stdlib/openapi/lib/decorators.tsp  # row3: model X is Y
+stdlib/openapi3/lib/decorators.tsp  # row8: extern dec/model/fn
+stdlib/protobuf/lib/proto.tsp  # row3: model X is Y
+stdlib/protobuf/test/scenarios/addressbook/input/addressbook.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/anonymous-model/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/anonymous-package/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/array-nested/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/array/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/cross package references/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/derived-scalar/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/doc/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/enum-nonintegral/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/enum-nozero/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/enum/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/extern/input/main.tsp  # row3: model X is Y
+stdlib/protobuf/test/scenarios/illegal field reservations/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/intrinsics/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/map/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/model-no-package/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/name-collision/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/optional-lossy/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/optional/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/options-invalid/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/options/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/reserved field collisions/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/reserved fields/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/simple-error/input/main.tsp  # row7: spread operation param (interface op with trailing return-type mismatch; also has invalid @field indices, unrelated to grammar)
+stdlib/protobuf/test/scenarios/simple/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/streams/input/main.tsp  # row7: spread operation param
+stdlib/protobuf/test/scenarios/templates-error/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/templates/input/main.tsp  # row5: comma-separated model member
+stdlib/protobuf/test/scenarios/union/input/main.tsp  # row5: comma-separated model member
