@@ -1,6 +1,6 @@
 import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
 
-rootProject.name = "intellij-tsp-plugin"
+rootProject.name = "simpli-typespec-highlighter"
 
 pluginManagement {
     plugins {
