@@ -2,12 +2,19 @@
 
 Governing decisions: [ADR 0001](../adr/0001-highlighting-approach.md) (JFlex lexer, parser
 deferred), [ADR 0002](../adr/0002-build-and-platform-baseline.md) (IC 2025.2.6.3, JDK 21,
-Gradle 9.5, IPGP 2.16.0), [ADR 0003](../adr/0003-parser-definition-timing.md)
+Gradle 9.5, IPGP 2.16.0 — **D6 superseded by ADR 0006**),
+[ADR 0003](../adr/0003-parser-definition-timing.md)
 (`ParserDefinition` is M5's first task; no placeholder; spellchecking moves to M5;
 `checkHighlighting` / `EditorTestUtil.testFileSyntaxHighlighting` banned until then),
+[ADR 0004](../adr/0004-reference-resolution-approach.md) (references are `PsiReference` on our
+own PSI; resolution is a cached, word-index-prefiltered tree walk; **D7 imposes four PSI-shape
+requirements on M5b**; navigation is M5.5, rename/Go-To-Symbol/stubs are M6.5),
 [ADR 0005](../adr/0005-minimal-parser-definition-for-commenting.md) (**amends ADR 0003**: a
 minimal flat `ParserDefinition` lands in M4 as M4b, because `lang.commenter` resolves by file
-language and therefore cannot work on plain-text PSI).
+language and therefore cannot work on plain-text PSI),
+[ADR 0006](../adr/0006-grammar-toolchain.md) (**supersedes ADR 0002 D6**: adopt the IPGP
+`grammarkit` subplugin, bump IPGP to 2.18.1, bridge the hand-written lexer's tokens into the
+BNF via `tokenTypeFactory`, design error recovery in from the first rule).
 
 Conventions used throughout:
 
@@ -19,17 +26,31 @@ Conventions used throughout:
 - **Every milestone ends green on `./gradlew build`.** A milestone that does not compile is
   not done, regardless of how much of it exists.
 
-| # | Title | One-line goal |
-|---|---|---|
-| M0 | Bootstrap | Template scaffolded, pinned to IC 2025.2.6.3 on JDK 21, `build`/`runIde`/`verifyPlugin` green with zero plugin code. |
-| M1 | Language + file type | `.tsp` files are recognised as a TypeSpec language file with an icon. |
-| M2 | Token types + JFlex lexer | A generated, restartable lexer turns TypeSpec source into the full token set. |
-| M3 | Syntax highlighter + colour settings | Tokens are coloured, and the colours are user-configurable. **← primary deliverable ships here** |
-| M4 | Editor conveniences | Comment/uncomment, brace matching, quote handling, TODO comments. Spellchecking moved to M5 (ADR 0003). |
-| M4b | Minimal flat `ParserDefinition` | `.tsp` gets real `TypeSpecFile` PSI so M4's language-keyed EPs resolve. No grammar (ADR 0005). |
-| M5 | Grammar-Kit parser + PSI | A real parse tree, unlocking everything structural. Opens with the `ParserDefinition` (ADR 0003 D1). |
-| M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. |
-| M7 | Compatibility + release readiness | Verified across the whole supported IDE range; CI green; metadata complete. |
+| # | Title | One-line goal | Status |
+|---|---|---|---|
+| M0 | Bootstrap | Template scaffolded, pinned to IC 2025.2.6.3 on JDK 21, `build`/`runIde`/`verifyPlugin` green with zero plugin code. | ✅ `6a2ceec` |
+| M1 | Language + file type | `.tsp` files are recognised as a TypeSpec language file with an icon. | ✅ `46b4422` |
+| M2 | Token types + JFlex lexer | A generated, restartable lexer turns TypeSpec source into the full token set. | ✅ `c7a9efe` |
+| M3 | Syntax highlighter + colour settings | Tokens are coloured, and the colours are user-configurable. **← primary deliverable ships here** | ✅ `d9e5e74` |
+| M4 | Editor conveniences | Comment/uncomment, brace matching, quote handling, TODO comments. Spellchecking moved to M5 (ADR 0003). | ✅ `3c4c84c` |
+| M4b | Minimal flat `ParserDefinition` | `.tsp` gets real `TypeSpecFile` PSI so M4's language-keyed EPs resolve. No grammar (ADR 0005). | ✅ `ce92694` |
+| **M5a** | **Grammar-Kit toolchain** | **IPGP 2.18.1 + `grammarkit` subplugin; `generateParser` runs and reuses the hand-written lexer's tokens. No TypeSpec grammar. (ADR 0006)** | **← NEXT** |
+| M5b | Core grammar + PSI contract | Real tree for file/`import`/`using`/`namespace`/`model`; `TypeSpecIdentifier`, `TypeSpecQualifiedName`, `PsiNameIdentifierOwner` everywhere (ADR 0004 D7). Flat parser deleted. | planned |
+| M5c | Remaining grammar | `op`/`interface`/`enum`/`union`/`alias`/`scalar`, decorators, type expressions. Spellchecking tail (gated). `kitchen-sink.tsp` parses clean. | planned |
+| M5.5 | Reference resolution + navigation | Ctrl-click / Go To Declaration / Find Usages on a type reference. (ADR 0004, [plan 02](02-navigation.md)) | planned |
+| M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. Annotator + completion build on M5.5's resolver. | planned |
+| M6.5 | Rename, Go To Symbol, stub index | The write-side refactoring and the index that makes project-wide symbol search affordable. (ADR 0004 D6) | planned |
+| M7 | Compatibility + release readiness | Verified across the whole supported IDE range; CI green; metadata complete. | planned |
+
+Detail plans: [01](01-lexer-and-highlighter.md) (M1–M3), [03](03-grammar-and-psi.md)
+(M5a–M5c), [02](02-navigation.md) (M5.5). **Plan file numbers are allocation order, not
+milestone order** — plan 03 runs before plan 02.
+
+M5 was a single milestone; it is split into M5a/M5b/M5c by
+[plan 03](03-grammar-and-psi.md), using the split authorisation the original §M5 already
+granted. M5.5 and M6.5 are decimal by [ADR 0004](../adr/0004-reference-resolution-approach.md)
+D5 — renumbering M6/M7 would silently falsify ADR 0002 and ADR 0003, which cite them by
+number.
 
 Ongoing, not a milestone: **re-verify the keyword set against
 `microsoft/typespec` → `packages/compiler/src/core/scanner.ts` on each TypeSpec minor
@@ -330,72 +351,110 @@ and still passing.
 
 ---
 
-## M5 — Grammar-Kit parser and PSI
+## M5 — Grammar-Kit parser and PSI → **split into M5a / M5b / M5c**
 
-**Goal.** A parse tree for TypeSpec. This is where ADR 0001's staged plan cashes in.
+**Goal.** A parse tree for TypeSpec. This is where ADR 0001's staged plan cashes in, and
+what unblocks M5.5, M6 and M6.5.
 
-**Task 0 (first, before any grammar work) — ~~land~~ *replace* the `ParserDefinition`.**
-~~Per [ADR 0003](../adr/0003-parser-definition-timing.md) D1/D2 this was deliberately kept out
-of M4.~~ **Superseded:** M4b already landed `TypeSpecParserDefinition`, `TypeSpecFile` and
-the flat `TypeSpecFlatParser`
-([ADR 0005](../adr/0005-minimal-parser-definition-for-commenting.md) D1). Task 0 is now the
-much smaller job of swapping `createParser` to the generated Grammar-Kit parser and giving
-`createElement` real composite types — the `ParserDefinition` *shape*, the file element type
-and `TypeSpecFile` stay as they are.
-Register `TypeSpecParserDefinition` (EP `lang.parserDefinition`) with **our own**
-`IFileElementType(TypeSpecLanguage)` and **our own** `TypeSpecFile : PsiFileBase` —
-**never subclass `PlainTextParserDefinition`**, whose `createFile` returns
-`PsiPlainTextFileImpl` and re-triggers the file-type overwrite (ADR 0003 F1/F4).
+**This section is now a summary. The executable plan is
+[`03-grammar-and-psi.md`](03-grammar-and-psi.md)** — go there for files, approach, acceptance
+and done-signals. What follows is the roadmap-level record of how M5 changed shape.
 
-The moment this lands, three things change and `tsp-tester` must sweep for them:
+**Split (decided up front, 2026-09-02).** The original §M5 authorised a split *"if the first
+`tsp-dev` run stalls."* It is split before starting instead, because three of its reasons are
+visible now rather than after a stall: the toolchain change is not grammar work and can fail
+on its own; ADR 0006 F8's `mixin=` unknown is blocking for the grammar's *architecture*; and
+the full grammar plus the ADR 0004 D7 contract plus a golden per area is past one `tsp-dev`
+run.
+
+| | Scope |
+|---|---|
+| **M5a** | IPGP `2.16.0 → 2.18.1`; apply `org.jetbrains.intellij.platform.grammarkit`; migrate the hand-rolled JFlex `JavaExec` to `generateLexer`; add `generateParser`; bridge M2's `TypeSpecTokenTypes` into the BNF via `tokenTypeFactory`; spike `mixin=`. **No TypeSpec grammar.** ([ADR 0006](../adr/0006-grammar-toolchain.md)) |
+| **M5b** | Grammar for file / `import` / `using` / `namespace` / `model`. `TypeSpecIdentifier` + `TypeSpecQualifiedName`. Every declaration a `PsiNameIdentifierOwner` with correct `getTextOffset()`. `TypeSpecFile` accessors. Swap `createParser`/`createElement`; **delete `TypeSpecFlatParser`**. ([ADR 0004](../adr/0004-reference-resolution-approach.md) D7) |
+| **M5c** | `op`, `interface`, `enum`, `union`, `alias`, `scalar`, decorator applications, type expressions. Spellchecking tail. `kitchen-sink.tsp` parses with zero `PsiErrorElement`. |
+
+**Task 0 — ~~land~~ *replace* the `ParserDefinition`.** ~~Per
+[ADR 0003](../adr/0003-parser-definition-timing.md) D1/D2 this was deliberately kept out of
+M4.~~ **Superseded:** M4b already landed `TypeSpecParserDefinition`, `TypeSpecFile` and the
+flat `TypeSpecFlatParser`
+([ADR 0005](../adr/0005-minimal-parser-definition-for-commenting.md) D1). Task 0 is now a
+two-line swap in **M5b**: `createParser` → the generated `TypeSpecParser`, `createElement` →
+`TypeSpecTypes.Factory.createElement(node)`. The `ParserDefinition` *shape*, the
+`IFileElementType` **instance** and `TypeSpecFile` all stay exactly as they are
+([ADR 0006](../adr/0006-grammar-toolchain.md) F7). **Never subclass
+`PlainTextParserDefinition`** (ADR 0003 F1/F4) — still binding.
+
+**Three things change the moment M5b lands, and `tsp-tester` must sweep for them:**
 - `psiFile.language` / `psiFile.fileType` become correct — the M1 assertions can be
   *tightened* (they were deliberately written against `virtualFile` / `baseLanguage`, which
   remain true either way, so nothing breaks).
 - `checkHighlighting` and `EditorTestUtil.testFileSyntaxHighlighting` stop being traps and
-  become usable; the ADR 0003 D4 ban lifts here.
+  become usable; the ADR 0003 D4 ban lifts **in M5b**. Lifting the ban is not a mandate to
+  rewrite green tests.
 - `getCommentTokens()` / `getWhitespaceTokens()` start driving TODO indexing, the commenter
   and whitespace logic. Get those token sets right.
 
-**In scope.** `TypeSpec.bnf`, `generateTypeSpecParser` Gradle task,
-`TypeSpecParserDefinition`, `TypeSpecFile : PsiFileBase`, `TypeSpecElementType`,
-generated parser + PSI into `src/main/gen/` (or `build/generated/`), EP `lang.parserDefinition`.
+**Toolchain, changed.** [ADR 0006](../adr/0006-grammar-toolchain.md) **supersedes
+[ADR 0002](../adr/0002-build-and-platform-baseline.md) D6**: the standalone
+`org.jetbrains.grammarkit` plugin is archived, and the maintained path is the IPGP subplugin
+`org.jetbrains.intellij.platform.grammarkit`. The hand-rolled JFlex `JavaExec` task is
+retired in M5a rather than being extended to `generateParser` — one job, one mechanism.
 
-**Tail task — spellchecking**, moved here from M4 (ADR 0003 D3). `TypeSpecSpellcheckingStrategy`
-on EP `spellchecker.support`, plus a **second `<depends>` on `com.intellij.modules.spellchecker`**
-in `plugin.xml`. This is a CE-available platform module, not an Ultimate dependency; it is the
-one sanctioned exception to the one-`<depends>` rule and **needs owner ratification before
-`tsp-dev` writes it**. Acceptance: `./gradlew verifyPlugin` stays clean and the plugin still
-installs and loads on a bare IntelliJ IDEA Community install.
+**PSI contract, added.** [ADR 0004](../adr/0004-reference-resolution-approach.md) D7 imposes
+four requirements that M5 as originally written would have missed, and that are expensive to
+retrofit after the grammar ships: per-segment `TypeSpecIdentifier` /
+`TypeSpecQualifiedName` nodes used *uniformly* in every naming position;
+`PsiNameIdentifierOwner` on every declaration; `getName()`/`getNameIdentifier()`/
+`getTextOffset()` as part of **M5b's** contract (not M5.5's); and four `TypeSpecFile`
+accessors. All four are now binding requirements of M5b with their own acceptance test.
 
-Grammar coverage, in dependency order — **do not attempt all of TypeSpec**:
-`import` / `using` / `namespace` statements; `model` with properties, `extends`, `is`,
-spread; `op`; `interface`; `enum`; `union`; `alias`; `scalar`; decorator applications;
-type expressions (union `|`, intersection `&`, array `[]`, template args `<>`, optional `?`).
-Explicitly deferred: projections, `dec`/`fn`/`extern` declarations, value literals
-(`#{}`/`#[]`) beyond a coarse rule.
+**Tail task — spellchecking**, moved here from M4 (ADR 0003 D3), lands in **M5c**.
+`TypeSpecSpellcheckingStrategy` on EP `spellchecker.support`, plus a **second `<depends>` on
+`com.intellij.modules.spellchecker`**. That is a CE-available platform module, not an Ultimate
+dependency; it is the one sanctioned exception to the one-`<depends>` rule and **needs owner
+ratification before `tsp-dev` writes it**. If unratified when M5c starts, ship M5c without it.
 
-**Out of scope.** Reference resolution, `PsiNamedElement`/rename, indexing/stubs. Those are
-a follow-on milestone if wanted.
+**Grammar coverage** — **do not attempt all of TypeSpec.** Explicitly deferred: projections,
+`dec`/`fn`/`extern` declarations, value literals (`#{}`/`#[]`) beyond a coarse rule.
 
-**Acceptance.** `TypeSpecParsingTest : ParsingTestCase("parser", "tsp", TypeSpecParserDefinition())`
-with a `.tsp`/`.txt` pair per grammar area. **The first run generates the `.txt`; `tsp-tester`
-must read each generated tree and confirm it is correct before committing** — a wrong tree
-gets frozen otherwise. Plus: re-run the whole M2/M3 test suite unchanged (the lexer contract
-must not have shifted) and assert no `PsiErrorElement` in `kitchen-sink.tsp`.
+**Out of scope, still.** Reference resolution and rename — but they are no longer "a
+follow-on milestone if wanted": they are **M5.5** ([plan 02](02-navigation.md)) and **M6.5**,
+scheduled by [ADR 0004](../adr/0004-reference-resolution-approach.md) D5/D6.
 
-**Verification**
+**Verification** (each of M5a/M5b/M5c independently)
 ```bash
 ./gradlew clean build test verifyPlugin
 ```
 
-**Risks.** `<`/`>` template-argument ambiguity is the known hard part; expect to need
-Grammar-Kit external rules or `pin`/recover attributes. Grammar-Kit's Gradle integration has
-the same staleness problem as JFlex (ADR 0002 D6) — plan on a `JavaExec` task, and budget
-this milestone as the largest by a wide margin. **Split it if the first `tsp-dev` run
-stalls**: M5a = task 0 (`ParserDefinition` + file element) + a grammar covering only
-`import`/`using`/`namespace`/`model`; M5b = the rest of the grammar plus the spellchecking
-tail. Even in a split, M5a ships a **real** `ParserDefinition` over a partial grammar — never
-a `parseContents`-emits-one-leaf stub as a resting state (ADR 0003 D2).
+**Risks.** `<`/`>` template-argument ambiguity is the known hard part; it is deliberately
+confined to **M5c**, so it cannot destabilise the milestone that fixes the PSI contract.
+Error recovery is designed in from the first rule
+([ADR 0006](../adr/0006-grammar-toolchain.md) D6), not retrofitted. Golden parse trees must
+be **read**, not merely regenerated ([ADR 0006](../adr/0006-grammar-toolchain.md) D8), and
+`isCheckNoPsiEventsOnReparse()` must never be overridden (D9). Never leave a
+`parseContents`-emits-one-leaf stub as a resting state (ADR 0003 D2) — M5b deletes it.
+---
+
+## M5.5 — Reference resolution and jump navigation
+
+**Goal.** Ctrl/Cmd-click, *Go To Declaration* and *Find Usages* on a TypeSpec type reference
+land on its declaration.
+
+Governed by [ADR 0004](../adr/0004-reference-resolution-approach.md). Executable plan:
+[`02-navigation.md`](02-navigation.md). **Prerequisite: M5c green**, including ADR 0004 D7's
+four PSI-shape requirements (which M5b implements and `TypeSpecPsiContractTest` asserts).
+
+References are `PsiReference` on our own PSI — **not** `psi.referenceContributor` (that EP is
+for PSI you do not own), **not** `gotoDeclarationHandler`, **not** the still-experimental
+`com.intellij.model` Symbol API. Resolution is a three-tier cached tree walk (current file →
+import closure → project widening prefiltered by the word index), hard-capped at 50 candidate
+files. All references are **soft** — TypeSpec's built-ins and library types are declared
+nowhere in user sources and must not paint the file red.
+
+Ships with Find Usages (`lang.findUsagesProvider`). **Rename and Go To Symbol do not** — they
+are M6.5 (ADR 0004 D6). Known, recorded gaps: `@decorator` navigation (blocked by M2's
+single-token `DECORATOR` design, ADR 0004 F6/open question 1) and library-type navigation
+(ADR 0004 open question 2).
 
 ---
 
@@ -403,6 +462,12 @@ a `parseContents`-emits-one-leaf stub as a resting state (ADR 0003 D2).
 
 **Goal.** The feature checklist from `siketyan/intellij-typespec-plugin`, delivered on our
 own PSI.
+
+**Depends on M5.5, not just M5c.** The annotator's "declaration name vs reference, resolved
+vs unresolved" distinction *is* M5.5's resolver, and the completion contributor's in-scope
+type names are `TypeSpecReference.getVariants()` over the same scope walk. Doing M6 first
+means writing both blind and rewriting them
+([ADR 0004](../adr/0004-reference-resolution-approach.md) D5).
 
 **In scope**, each independently shippable — take them one at a time:
 - `TypeSpecStructureViewFactory` + `StructureViewModel` (EP `lang.psiStructureViewFactory`).
@@ -423,6 +488,32 @@ own PSI.
 ```bash
 ./gradlew build test verifyPlugin
 ```
+
+---
+
+## M6.5 — Rename, Go To Symbol, stub index
+
+**Goal.** The write-side refactoring, plus the index that makes project-wide symbol search
+affordable.
+
+Governed by [ADR 0004](../adr/0004-reference-resolution-approach.md) D6. Not yet planned in
+detail — it gets its own plan doc when M5.5 ships.
+
+**In scope.** `setName()` backed by a `TypeSpecElementFactory` (parse a throwaway file, lift
+the identifier node); a `NamesValidator`; correct backtick-escaping when the new name is a
+TypeSpec keyword or contains spaces; `lang.elementManipulator` (register it **before**
+attempting rename); `gotoSymbolContributor` / `ChooseByNameContributorEx`; and the stub index
+(`IStubFileElementType` + hand-written stub classes + a `getStubVersion()` constant) that Go
+To Symbol is gated on.
+
+**Why it is separate.** Rename is the one thing in this roadmap that can **corrupt a user's
+source**; it deserves its own risk surface and its own tests. Go To Symbol is called per
+keystroke over the whole project — without stubs that means repeated parsing, exactly the
+failure mode M5.5's 50-file cap exists to avoid.
+
+**Trigger for the stub index** (ADR 0004 D2's table): projects over ~1000 `.tsp` files, or
+very common segment names (`Name`, `Id`, `Error`) where the word prefilter stops
+discriminating and M5.5's cap starts firing.
 
 ---
 

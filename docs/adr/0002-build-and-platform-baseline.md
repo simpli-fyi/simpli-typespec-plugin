@@ -1,6 +1,8 @@
 # ADR 0002 — Build, platform and JDK baseline
 
-- Status: **Accepted, with two items needing owner ratification** (plugin id/vendor, publishing)
+- Status: **Accepted, with two items needing owner ratification** (plugin id/vendor, publishing).
+  **D6 is superseded by [ADR 0006](0006-grammar-toolchain.md)** (grammar/lexer generation moves
+  to the IPGP `grammarkit` subplugin; IPGP bumps 2.16.0 → 2.18.1). D1–D5 and D7 stand.
 - Date: 2026-09-02
 - Deciders: `tsp-architect` (proposed), project owner (to ratify)
 
@@ -168,6 +170,16 @@ Ratified by the owner on 2026-09-02, to sit alongside the already-released
 | Source-set layout | `src/main/kotlin/simpli/fyi/plugins/typespec/...`, JFlex spec in `src/main/grammars/`, generated lexer into `build/generated/sources/jflex/` | decided |
 
 ### D6 — Lexer generation: no `org.jetbrains.grammarkit` plugin
+
+> ⚠ **SUPERSEDED by [ADR 0006](0006-grammar-toolchain.md) (2026-09-02).** The conclusion below
+> is **reversed**: `JetBrains/gradle-grammar-kit-plugin` is now *archived*, and Grammar-Kit
+> integration moved into a subplugin of the IntelliJ Platform Gradle Plugin we already apply
+> (`org.jetbrains.intellij.platform.grammarkit`, added in IPGP 2.12.0). M5a adopts it, bumps
+> IPGP to 2.18.1 and retires the hand-rolled `JavaExec` task described here. The fallback
+> clause below (commit `idea-flex.skeleton`, or commit the generated `.java`) is **withdrawn**.
+> D6's *reasoning* was sound for the information available in M2 — it is kept verbatim below
+> as the record of why the hand-rolled task existed for M2–M4b. **Every other decision in this
+> ADR (D1–D5, D7) is unaffected.**
 
 The Grammar-Kit Gradle plugin's latest release is `2023.3.0.3`; it predates Gradle 9 and
 the configuration cache that this template enables. Instead, M2 adds:
