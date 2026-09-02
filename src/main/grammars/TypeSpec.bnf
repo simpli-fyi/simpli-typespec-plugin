@@ -189,6 +189,21 @@ model_body ::= '{' model_member_* '}' {
 
 private model_member_ ::= model_property | model_spread | bad_model_member_token_
 
+// Plan 04 M6b row 5 / ADR 0007 D6 follow-on: the reported defect-1 repro
+// (`@@package(A.B, { name: "x" })`, `@dec({title: "x"})`) is a `model_expression`
+// (`{ ... }`) whose *only* member has no trailing punctuation before the closing
+// `}` — the dominant shape for an inline object type. `value_expression`'s
+// unification with `type_expression_` alone does not make that repro parse
+// clean: `model_property` still mandated a trailing `';'`, so this optional
+// separator is pulled forward from M6b's own `member_separator_` design one
+// milestone early — it is the piece that closes M6a's own acceptance probe,
+// not scope creep past it. Loosening note (plan 04 M6b Risks): this also makes
+// `model M { a: string b: string }` (no separator between distinct members)
+// legal — an over-permissive grammar produces a wrong tree, an under-permissive
+// one produces red squiggles on valid code, and only the second is visible to
+// the user, so the loosening is accepted.
+private member_separator_ ::= ';' | ','
+
 // ADR 0006 D6: same reasoning as `bad_top_level_token_` above — the
 // property-loop choice does *not* use `recoverWhile`. A `recoverWhile`
 // predicate here would face the identical trap: when `model_property`
@@ -204,7 +219,7 @@ private model_member_ ::= model_property | model_spread | bad_model_member_token
 // own closing '}', then let the loop retry — is what lets a later, otherwise
 // well-formed property still parse as a proper `TypeSpecModelPropertyImpl`
 // after an earlier broken one.
-private bad_model_member_token_ ::= bad_model_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | ';' | '.' | ','
+private bad_model_member_token_ ::= bad_model_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR | ';' | '.' | ','
   | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '...')
 
 private bad_model_member_guard_ ::= !('}')
@@ -213,16 +228,23 @@ model_spread ::= '...' qualified_name ';' {
   pin=1
 }
 
-// Pins at ':' (position 3, after the optional '?'), not at the identifier —
-// ADR 0006 D6's example verbatim: a bare identifier alone is not yet the point
-// of no return, the ':' is. M5c: the type is now a full `type_expression_`
-// (repointed from bare `qualified_name`, plan 03 M5c Approach; `private`, see
-// `extends_clause`'s comment above) and an optional default value (`=
-// value_expression`) is added — kitchen-sink's `weight?: int32 = 10;` needs
-// it. Both additions are optional trailing/relocated sequence elements, so
-// `pin=3` (the ':') is unaffected by their position.
-model_property ::= identifier '?'? ':' type_expression_ ('=' value_expression)? ';' {
-  pin=3
+// Pins at ':' (position 4, after the leading `decorator_application*` and the
+// optional '?'), not at the identifier — ADR 0006 D6's example verbatim: a
+// bare identifier alone is not yet the point of no return, the ':' is. M5c:
+// the type is now a full `type_expression_` (repointed from bare
+// `qualified_name`, plan 03 M5c Approach; `private`, see `extends_clause`'s
+// comment above) and an optional default value (`= value_expression`) is
+// added — kitchen-sink's `weight?: int32 = 10;` needs it. Plan 04 M6b: a
+// leading `decorator_application*` is added — `@key id: string;` is the
+// single most common non-trivial construct in the ph-cdm corpus (366
+// occurrences) and previously failed to parse because `model_property` was
+// the one decoratable rule that had no decorator prefix. Adding it shifts the
+// pin: `decorator_application*` is one sequence element, so `':'` moves from
+// position 3 to position 4 — `pin=4` below, not `pin=3` (ADR 0007 plan 04 M6b
+// trap; a wrong pin here silently degrades error recovery without failing any
+// test).
+model_property ::= decorator_application* identifier '?'? ':' type_expression_ ('=' value_expression)? member_separator_? {
+  pin=4
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
@@ -278,16 +300,19 @@ augment_decorator_statement ::= AUGMENT_DECORATOR '(' value_expression (',' valu
   pin=1
 }
 
-// Coarse value-literal / value-expression grammar: enough to appear as a
-// decorator argument (`@service(#{ title: "..." })`) or a property default
-// value (`weight?: int32 = 10;`) — deliberately no inner structure beyond one
-// level of object/array nesting. A real value-expression grammar (string /
-// number / member-access / tuple / object literals composed arbitrarily) is
-// exactly the "value literals beyond a coarse rule" exclusion — plan 03 M5c
-// "Explicitly deferred", it lands with `const` in M5d.
-// See the `VALID_ESCAPE`/`INVALID_ESCAPE` tokens= comment: a string literal
-// with an escape sequence is several leaf tokens, not a bare `STRING`.
-value_expression ::= (STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*) | NUMBER | 'true' | 'false' | qualified_name | object_literal | array_literal
+// ADR 0007 D6 / plan 04 M6a: unified with `type_expression_`, per upstream
+// TypeSpec's single `Expression` production that spans both type expressions
+// and value literals. Previously this rule duplicated STRING/NUMBER/
+// true/false/qualified_name (already covered by `type_expression_` via
+// `literal_type` and `type_reference_`) and, critically, never reached
+// `model_expression` (`{ ... }`) — so a brace model-expression decorator
+// argument like `@@package(A.B, { name: "x" })` or `@dec({ title: "x" })`
+// failed to parse even though upstream allows it. `object_literal` (`#{...}`)
+// and `array_literal` (`#[...]`) stay ordered first: they are lexed as
+// distinct HASH_BRACE/HASH_BRACKET tokens so there is no real ambiguity with
+// `type_expression_`'s `model_expression`/`tuple_expression`, but ordered
+// choice makes the intent explicit.
+value_expression ::= object_literal | array_literal | type_expression_
 
 // `#{ key: value, ... }` — the hand-written lexer already returns the whole
 // `#{` as one HASH_BRACE token (fixed text, unlike DECORATOR); the closing

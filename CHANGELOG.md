@@ -116,3 +116,23 @@
   `TypeSpecPsiContractTest` methods (own `ContractFixtureM5c.tsp`, M5b's `ContractFixture.tsp`
   untouched). All M5b goldens/tests unchanged.
 
+### Fixed
+
+- Grammar corrections from the ph-cdm corpus audit (plan 04 M6a/M6b; see
+  `docs/adr/0007-corpus-driven-grammar-acceptance.md`):
+  - `value_expression` is unified with `type_expression_` (ADR 0007 D6), so decorator and
+    augment-decorator arguments now accept brace model expressions —
+    `@@package(A.B, { name: "x" })` and `@dec({ title: "x" })` previously failed to parse.
+  - `model_property` gains a leading `decorator_application*` — `@key id: string;` (the
+    single most common non-trivial construct in the ph-cdm corpus) previously failed to
+    parse because `model_property` was the one decoratable rule with no decorator prefix.
+    `pin` moves from `3` to `4` to keep pinning at `':'`. `DECORATOR` is added to
+    `bad_model_member_token_` so a decorated property no longer poisons the rest of the
+    model body's error recovery.
+  - `model_property`'s trailing `;` becomes an optional `member_separator_` (`;` or `,`) —
+    needed for the reported repro itself: an inline `{ name: "x" }` / `{title: "x"}` object
+    argument has no trailing punctuation before its closing `}`.
+  - `Decorators.txt`, `AugmentDecorator.txt`, `Enum.txt` and `KitchenSinkCore.txt` parser
+    goldens shift as a result (a plain string/number `value_expression` now wraps in the
+    inlined `literal_type` node) and are pending hand review — not blind-rebaselined.
+
