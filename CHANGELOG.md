@@ -39,3 +39,18 @@
   `psiFile.fileType` to TypeSpec instead of falling back to `PsiPlainTextFileImpl`, fixing all
   6 `TypeSpecCommenterTest` cases and giving `TypeSpecBraceMatcher` / `TypeSpecQuoteHandler`
   automated re-verification under the new PSI.
+- M5a: the Grammar-Kit toolchain now runs end-to-end (`docs/adr/0006-grammar-toolchain.md`).
+  Bumped the IntelliJ Platform Gradle Plugin `2.16.0` → `2.18.1` and replaced the hand-rolled
+  JFlex `JavaExec` task with the `org.jetbrains.intellij.platform.grammarkit` subplugin's
+  `generateLexer`/`generateParser` tasks, wired into disjoint output roots with an explicit
+  `dependsOn` on `compileKotlin`/`compileJava` (works around the 2.18.1 `@Internal`
+  `targetRootOutputDir` regression — a missing `dependsOn` here passes warm and fails clean).
+  Added a throwaway seam-verification grammar (`src/main/grammars/TypeSpec.bnf`, no real
+  TypeSpec syntax yet) proving the `mixin=` + `implements=` single-pass pattern: the generated
+  `TypeSpecThrowawayImpl` (Java) correctly extends the hand-written `TypeSpecThrowawayMixin`
+  (Kotlin) and implements `TypeSpecThrowawayIface`, with `methods=[...]`/`psiImplUtilClass`
+  banned. `TypeSpecTokenTypes` gained a `fromNameOrText` factory (the `tokenTypeFactory`
+  bridge, covered by a new `TypeSpecTokenTypeFactoryTest`) so generated parser code resolves
+  to the same token instances the JFlex lexer already emits. `TypeSpecElementType` added for
+  future composite element types. `TypeSpecParserDefinition`/`TypeSpecFlatParser`/
+  `TypeSpecElementTypes`/`plugin.xml` are untouched — the flat parser ships as-is until M5b.

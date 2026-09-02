@@ -1,0 +1,63 @@
+// ADR 0006 — Grammar-Kit toolchain seam verification (M5a).
+//
+// This grammar carries NO real TypeSpec syntax. Its only job is to prove the
+// generation pipeline end-to-end under IPGP 2.18.1 before ~12 real rules depend on
+// it (ADR 0006 D10, plan 03 M5a step 7): one throwaway rule exercising the
+// `mixin=` (base class) + `implements=` (hand-written interface) single-pass
+// pattern (ADR 0006 D7/F8), and the `tokenTypeFactory` bridge to the existing
+// hand-written lexer's token instances (ADR 0006 D5/F6).
+//
+// The "method mixin" attribute and the PSI-impl-util-class attribute (named in
+// ADR 0006 D7/F8) are BANNED in this file: both resolve via Grammar-Kit's
+// `AsmHelper` against the generator's own classpath, which cannot contain classes
+// this Gradle build has not compiled yet.
+//
+// Removed in M5b, which replaces this file with the real grammar (file / import /
+// using / namespace / model) and TypeSpecNamedElementMixin.
+{
+  parserClass="simpli.fyi.plugins.typespec.parser.TypeSpecParser"
+  parserUtilClass="com.intellij.lang.parser.GeneratedParserUtilBase"
+
+  extends="com.intellij.extapi.psi.ASTWrapperPsiElement"
+
+  psiClassPrefix="TypeSpec"
+  psiImplClassSuffix="Impl"
+  psiPackage="simpli.fyi.plugins.typespec.psi"
+  psiImplPackage="simpli.fyi.plugins.typespec.psi.impl"
+
+  // ADR 0006 F11: named "TypeSpecTypes" (Grammar-Kit's own "<Lang>Types" convention),
+  // deliberately NOT "TypeSpecElementTypes" — that name is M4b's hand-written
+  // IFileElementType holder (TypeSpecElementTypes.FILE), which this milestone does
+  // not touch and which must keep owning getFileNodeType().
+  elementTypeHolderClass="simpli.fyi.plugins.typespec.psi.TypeSpecTypes"
+  elementTypeClass="simpli.fyi.plugins.typespec.psi.TypeSpecElementType"
+  tokenTypeClass="simpli.fyi.plugins.typespec.psi.TypeSpecTokenType"
+  // ADR 0006 D5/F6: bridges generated token-type constants to the *same* IElementType
+  // instances the hand-written JFlex lexer already emits, instead of minting new ones.
+  tokenTypeFactory="simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.fromNameOrText"
+
+  // Default is false; M5a wants token accessors on the generated PSI interfaces
+  // from the first rule onward (plan 03 M5a step 4).
+  generateTokenAccessors=true
+
+  // Only what the throwaway rule below needs (plan 03 M5a step 5). The full token
+  // list lands with the real grammar in M5b/M5c.
+  tokens=[
+    IDENTIFIER='regexp:[A-Za-z_][A-Za-z0-9_]*'
+  ]
+}
+
+// The root rule never gets its own PSI class/element type (Grammar-Kit assumes it
+// matches an externally-supplied root, ordinarily IFileElementType FILE — ADR 0006
+// F7). It has to be a distinct wrapper rule, not `throwaway` itself, or the seam
+// check below would never generate a `TypeSpecThrowawayImpl` to inspect.
+root ::= throwaway
+
+// Throwaway seam-verification rule (ADR 0006 D10.1, plan 03 M5a step 7). Not real
+// TypeSpec syntax; carries no meaning beyond proving that the generated Java
+// `TypeSpecThrowawayImpl` compiles against, and extends, the hand-written Kotlin
+// mixin below in the same source set.
+throwaway ::= IDENTIFIER {
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecThrowawayMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecThrowawayIface"
+}

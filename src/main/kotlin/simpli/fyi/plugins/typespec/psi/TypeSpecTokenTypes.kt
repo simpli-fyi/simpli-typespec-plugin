@@ -1,5 +1,7 @@
 package simpli.fyi.plugins.typespec.psi
 
+import com.intellij.psi.tree.IElementType
+
 object TypeSpecTokenTypes {
 
     // Trivia / comments
@@ -61,4 +63,76 @@ object TypeSpecTokenTypes {
     @JvmField val MINUS = TypeSpecTokenType("MINUS")
     @JvmField val STAR = TypeSpecTokenType("STAR")
     @JvmField val SLASH = TypeSpecTokenType("SLASH")
+
+    // ADR 0006 D5/F6: the bridge a Grammar-Kit `tokenTypeFactory` calls into so the
+    // generated parser references the *same* IElementType instances the JFlex lexer
+    // above already emits, instead of minting new (and therefore never-matching)
+    // duplicates. Keyed by debug name for every constant above; literal-token *text*
+    // keys (e.g. "{" -> LBRACE) are added alongside the real `.bnf` literal tokens
+    // that need them (M5b/M5c) — none exist yet, since M5a's throwaway rule only
+    // references IDENTIFIER, a regexp token keyed by name.
+    private val byKey: Map<String, IElementType> = mapOf(
+        "LINE_COMMENT" to LINE_COMMENT,
+        "BLOCK_COMMENT" to BLOCK_COMMENT,
+        "DOC_COMMENT" to DOC_COMMENT,
+        "STRING" to STRING,
+        "MULTILINE_STRING" to MULTILINE_STRING,
+        "VALID_ESCAPE" to VALID_ESCAPE,
+        "INVALID_ESCAPE" to INVALID_ESCAPE,
+        "NUMBER" to NUMBER,
+        "IDENTIFIER" to IDENTIFIER,
+        "KEYWORD" to KEYWORD,
+        "DECORATOR" to DECORATOR,
+        "AUGMENT_DECORATOR" to AUGMENT_DECORATOR,
+        "DIRECTIVE" to DIRECTIVE,
+        "LBRACE" to LBRACE,
+        "RBRACE" to RBRACE,
+        "LPAREN" to LPAREN,
+        "RPAREN" to RPAREN,
+        "LBRACKET" to LBRACKET,
+        "RBRACKET" to RBRACKET,
+        "HASH_BRACE" to HASH_BRACE,
+        "HASH_BRACKET" to HASH_BRACKET,
+        "HASH" to HASH,
+        "SEMICOLON" to SEMICOLON,
+        "COMMA" to COMMA,
+        "DOT" to DOT,
+        "ELLIPSIS" to ELLIPSIS,
+        "COLON" to COLON,
+        "COLON_COLON" to COLON_COLON,
+        "AT" to AT,
+        "AT_AT" to AT_AT,
+        "LT" to LT,
+        "GT" to GT,
+        "LE" to LE,
+        "GE" to GE,
+        "EQ" to EQ,
+        "EQ_EQ" to EQ_EQ,
+        "NE" to NE,
+        "ARROW" to ARROW,
+        "AMP" to AMP,
+        "AMP_AMP" to AMP_AMP,
+        "BAR" to BAR,
+        "BAR_BAR" to BAR_BAR,
+        "QUESTION" to QUESTION,
+        "EXCL" to EXCL,
+        "PLUS" to PLUS,
+        "MINUS" to MINUS,
+        "STAR" to STAR,
+        "SLASH" to SLASH,
+    )
+
+    /**
+     * Resolves a token *name* (or, for literal tokens once any exist, its literal
+     * *text*) to the identical [IElementType] instance the JFlex lexer emits.
+     * **Never** mints a new instance — a silently-minted duplicate would produce a
+     * parser that can never match its own lexer, with a symptom (every node is an
+     * error element) that points nowhere near the cause (ADR 0006 D5).
+     *
+     * `@JvmStatic` is mandatory: the generated code is Java calling into this Kotlin
+     * `object` statically (ADR 0006 D5).
+     */
+    @JvmStatic
+    fun fromNameOrText(key: String): IElementType =
+        byKey[key] ?: throw IllegalArgumentException("Unknown TypeSpec token key: $key")
 }
