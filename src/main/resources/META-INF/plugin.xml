@@ -18,6 +18,9 @@
                   fieldName="INSTANCE"
                   language="TypeSpec"
                   extensions="tsp"/>
+        <lang.parserDefinition
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.parser.TypeSpecParserDefinition"/>
         <lang.syntaxHighlighterFactory
                 language="TypeSpec"
                 implementationClass="simpli.fyi.plugins.typespec.highlighting.TypeSpecSyntaxHighlighterFactory"/>

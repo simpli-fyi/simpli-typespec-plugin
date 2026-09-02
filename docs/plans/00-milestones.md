@@ -4,7 +4,10 @@ Governing decisions: [ADR 0001](../adr/0001-highlighting-approach.md) (JFlex lex
 deferred), [ADR 0002](../adr/0002-build-and-platform-baseline.md) (IC 2025.2.6.3, JDK 21,
 Gradle 9.5, IPGP 2.16.0), [ADR 0003](../adr/0003-parser-definition-timing.md)
 (`ParserDefinition` is M5's first task; no placeholder; spellchecking moves to M5;
-`checkHighlighting` / `EditorTestUtil.testFileSyntaxHighlighting` banned until then).
+`checkHighlighting` / `EditorTestUtil.testFileSyntaxHighlighting` banned until then),
+[ADR 0005](../adr/0005-minimal-parser-definition-for-commenting.md) (**amends ADR 0003**: a
+minimal flat `ParserDefinition` lands in M4 as M4b, because `lang.commenter` resolves by file
+language and therefore cannot work on plain-text PSI).
 
 Conventions used throughout:
 
@@ -23,6 +26,7 @@ Conventions used throughout:
 | M2 | Token types + JFlex lexer | A generated, restartable lexer turns TypeSpec source into the full token set. |
 | M3 | Syntax highlighter + colour settings | Tokens are coloured, and the colours are user-configurable. **← primary deliverable ships here** |
 | M4 | Editor conveniences | Comment/uncomment, brace matching, quote handling, TODO comments. Spellchecking moved to M5 (ADR 0003). |
+| M4b | Minimal flat `ParserDefinition` | `.tsp` gets real `TypeSpecFile` PSI so M4's language-keyed EPs resolve. No grammar (ADR 0005). |
 | M5 | Grammar-Kit parser + PSI | A real parse tree, unlocking everything structural. Opens with the `ParserDefinition` (ADR 0003 D1). |
 | M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. |
 | M7 | Compatibility + release readiness | Verified across the whole supported IDE range; CI green; metadata complete. |
@@ -240,8 +244,11 @@ flat — open cosmetic question in plan 01.
 
 **Out of scope.** Folding (wants PSI → M6). **Spellchecking — moved to M5**
 ([ADR 0003](../adr/0003-parser-definition-timing.md) D3): the inspection walks PSI, so it is
-useless before a `ParserDefinition` exists. **No `ParserDefinition`, placeholder or
-otherwise, is added in M4** (ADR 0003 D1/D2) — nothing else here needs one.
+useless before a `ParserDefinition` exists. ~~**No `ParserDefinition`, placeholder or
+otherwise, is added in M4** (ADR 0003 D1/D2) — nothing else here needs one.~~
+**Overturned by [ADR 0005](../adr/0005-minimal-parser-definition-for-commenting.md):**
+`lang.commenter` *does* need one, so a minimal flat `ParserDefinition` lands here as **M4b**.
+Still out of scope in M4b: any BNF/grammar, any real PSI element hierarchy, spellchecking.
 
 **Files**
 ```
@@ -262,7 +269,12 @@ IdeActions.ACTION_COMMENT_LINE / ACTION_COMMENT_BLOCK)` with before/after fixtur
 
 **Risks / open questions**
 
-1. **Brace matching is likely-but-not-proven** without a `ParserDefinition`
+0. **RESOLVED THE HARD WAY.** M4 shipped (commit `3c4c84c`) and all 6 `TypeSpecCommenterTest`
+   cases failed: language-keyed EPs do not resolve on plain-text PSI. See
+   [ADR 0005](../adr/0005-minimal-parser-definition-for-commenting.md). Risk 1 below is
+   superseded by ADR 0005 D4 — brace matching is no longer "at risk", it is re-verified with
+   an automated test after M4b.
+1. ~~**Brace matching is likely-but-not-proven** without a `ParserDefinition`~~
    ([ADR 0003](../adr/0003-parser-definition-timing.md) F5/D5).
    `BraceMatchingUtil.getBraceMatcher` keys off `IElementType.getLanguage()` from the lexer's
    tokens and resolves via `LanguageBraceMatching.forLanguage` *before* the FileType
@@ -284,13 +296,53 @@ IdeActions.ACTION_COMMENT_LINE / ACTION_COMMENT_BLOCK)` with before/after fixtur
 
 ---
 
+## M4b — Minimal flat `ParserDefinition` (unblocks M4's commenter)
+
+**Goal.** `.tsp` files get a real `TypeSpecFile` PSI whose language is TypeSpec, so every
+language-keyed EP registered in M4 actually resolves. No grammar.
+
+Governing decision: [ADR 0005](../adr/0005-minimal-parser-definition-for-commenting.md)
+(Option A chosen; Option B — `SelfManagingCommenter` + `multiLangCommenter` — rejected
+outright and must not be implemented).
+
+**Files**
+```
+src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecFile.kt              (create)
+src/main/kotlin/simpli/fyi/plugins/typespec/psi/TypeSpecElementTypes.kt      (create — FILE type)
+src/main/kotlin/simpli/fyi/plugins/typespec/parser/TypeSpecParserDefinition.kt (create)
+src/main/kotlin/simpli/fyi/plugins/typespec/parser/TypeSpecFlatParser.kt     (create)
+src/main/resources/META-INF/plugin.xml                                       (modify)
+src/main/kotlin/simpli/fyi/plugins/typespec/editor/TypeSpecCommenter.kt      (modify — KDoc only)
+```
+
+**Approach.** Exactly as specified in ADR 0005 § "What `tsp-dev` implements (M4b)".
+Never subclass `PlainTextParserDefinition` (ADR 0003 F4).
+
+**Acceptance.** ADR 0005 § Acceptance: new `TypeSpecParserDefinitionTest`, plus repair and
+re-run of `TypeSpecCommenterTest` (6/6 green), `TypeSpecQuoteHandlerTest`,
+`TypeSpecBraceMatcherTest`, `TypeSpecFileTypeTest`; highlighting suites' assertions unchanged
+and still passing.
+
+**Done when**
+```bash
+./gradlew clean build test verifyPlugin
+```
+
+---
+
 ## M5 — Grammar-Kit parser and PSI
 
 **Goal.** A parse tree for TypeSpec. This is where ADR 0001's staged plan cashes in.
 
-**Task 0 (first, before any grammar work) — land the `ParserDefinition`.**
-Per [ADR 0003](../adr/0003-parser-definition-timing.md) D1/D2 this was deliberately kept out
-of M4. Register `TypeSpecParserDefinition` (EP `lang.parserDefinition`) with **our own**
+**Task 0 (first, before any grammar work) — ~~land~~ *replace* the `ParserDefinition`.**
+~~Per [ADR 0003](../adr/0003-parser-definition-timing.md) D1/D2 this was deliberately kept out
+of M4.~~ **Superseded:** M4b already landed `TypeSpecParserDefinition`, `TypeSpecFile` and
+the flat `TypeSpecFlatParser`
+([ADR 0005](../adr/0005-minimal-parser-definition-for-commenting.md) D1). Task 0 is now the
+much smaller job of swapping `createParser` to the generated Grammar-Kit parser and giving
+`createElement` real composite types — the `ParserDefinition` *shape*, the file element type
+and `TypeSpecFile` stay as they are.
+Register `TypeSpecParserDefinition` (EP `lang.parserDefinition`) with **our own**
 `IFileElementType(TypeSpecLanguage)` and **our own** `TypeSpecFile : PsiFileBase` —
 **never subclass `PlainTextParserDefinition`**, whose `createFile` returns
 `PsiPlainTextFileImpl` and re-triggers the file-type overwrite (ADR 0003 F1/F4).

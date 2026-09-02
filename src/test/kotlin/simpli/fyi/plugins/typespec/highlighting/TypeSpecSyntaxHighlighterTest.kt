@@ -16,10 +16,10 @@ import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes
  * unit tests (no fixture needed) and through the real editor-highlighter path.
  *
  * Deliberately does NOT use `myFixture.checkHighlighting()` (HighlightInfo/annotator-driven,
- * asserts on an empty set here) nor `EditorTestUtil.testFileSyntaxHighlighting` (resolves the
- * highlighter via `PsiFile.getFileType()`, which is `PlainTextFileType` for TypeSpec until a
- * `ParserDefinition` lands in M5 — see `TypeSpecFileTypeTest` — so it would silently exercise
- * `PlainSyntaxHighlighter` instead of production code).
+ * asserts on an empty set here) nor `EditorTestUtil.testFileSyntaxHighlighting` (ADR 0003 D4
+ * bans both regardless of `ParserDefinition` status; `checkHighlighting` remains meaningless
+ * for a lexer-only-colored language even now that `TypeSpecParserDefinition` exists — see
+ * ADR 0003 F3).
  */
 class TypeSpecSyntaxHighlighterTest : BasePlatformTestCase() {
 

@@ -1,6 +1,7 @@
 # ADR 0003 — When the `ParserDefinition` lands (and what a missing one actually costs)
 
-- Status: **Accepted**
+- Status: **Accepted, partially superseded by [ADR 0005](0005-minimal-parser-definition-for-commenting.md)**
+  — F5's `lang.commenter` row is **factually wrong**; D1/D2/D5 are amended there. F1–F4 stand.
 - Date: 2026-09-02
 - Deciders: `tsp-architect` (proposed), project owner (to ratify)
 - Relates to: [ADR 0001](0001-highlighting-approach.md) (staged approach: lexer first,
@@ -109,7 +110,7 @@ No SDK prose blesses this in words — **the sanction is by platform precedent o
 
 | M4 item | Works without `ParserDefinition`? | Evidence |
 |---|---|---|
-| `lang.commenter` | Yes | Not PSI-driven. |
+| `lang.commenter` | ~~Yes~~ **NO — this row is wrong, see [ADR 0005](0005-minimal-parser-definition-for-commenting.md)** | ~~Not PSI-driven.~~ **False.** `CommentByLine/BlockCommentHandler` resolve via `LanguageCommenters.INSTANCE.forLanguage(file.getLanguage())`, and that language is `TEXT` on the plain-text fallback of F1. Our registration is never reached; commenting is broken outright, not just for selections. |
 | `lang.quoteHandler` | **Yes, verified** | `TypedQuoteImpl.getQuoteHandler` falls back to `viewProvider.baseLanguage` (correct per F1), then operates on editor-highlighter tokens. |
 | `lang.braceMatcher` | **Likely, not proven** | `BraceMatchingUtil.getBraceMatcher` keys off `IElementType.getLanguage()` taken from the lexer's tokens, so it resolves via `LanguageBraceMatching.forLanguage` *before* the FileType fallback. Holds **only if every TypeSpec token type is constructed with `TypeSpecLanguage`**. The researcher could **not** verify whether `BraceHighlightingHandler` early-returns on plain-text PSI. |
 | `spellchecker.support` | **No** | The inspection walks PSI; useless without a `ParserDefinition`. |
@@ -122,6 +123,13 @@ module, not an Ultimate dependency — it is a deliberate, documented exception 
 project's one-`<depends>` rule, not a violation of the CE constraint.
 
 ## Decision
+
+> **Amended 2026-09-02 by [ADR 0005](0005-minimal-parser-definition-for-commenting.md).**
+> D1 is overturned (a minimal flat `ParserDefinition` lands in M4 as M4b, because the
+> commenter needs it); D2 is narrowed to "no placeholder *`ParserDefinition` shape*" while a
+> placeholder *parser body* is allowed as a transitional state owned by M5 Task 0; D5's
+> "at risk, verify manually in `runIde`" concession expires — brace matching and quote
+> handling both get automated re-verification. D3 and D4 stand unchanged.
 
 **D1. The `ParserDefinition` does not land in M4. It becomes M5's first task.**
 

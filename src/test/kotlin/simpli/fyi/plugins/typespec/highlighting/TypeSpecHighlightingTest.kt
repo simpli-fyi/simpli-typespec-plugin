@@ -54,7 +54,7 @@ class TypeSpecHighlightingTest : BasePlatformTestCase() {
             project,
         )
         // A LexerEditorHighlighter wrapping our lexer; smoke-check it actually tokenizes TypeSpec
-        // (a PlainTextFileType fallback would still produce iterator output, but with a single
+        // (a plain-text highlighter would still produce iterator output, but with a single
         // WHITE_SPACE/plain token covering everything instead of KEYWORD/IDENTIFIER/braces).
         highlighter.setText("model Widget {}")
         val it = highlighter.createIterator(0)

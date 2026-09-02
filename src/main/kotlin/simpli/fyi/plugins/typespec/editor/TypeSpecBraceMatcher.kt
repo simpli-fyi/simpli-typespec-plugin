@@ -10,13 +10,12 @@ import simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes
  * Pairs `{}`, `()`, `[]`, and the value-literal openers `#{` / `#[` (which close with
  * plain `}` / `]` per the lexer, see `_TypeSpecLexer.flex`).
  *
- * Ships **at risk** per ADR 0003 D5: `BraceMatchingUtil.getBraceMatcher` resolves via
- * `LanguageBraceMatching.forLanguage` off `IElementType.getLanguage()`, which holds here
- * because every [TypeSpecTokenTypes] constant is a `TypeSpecTokenType` constructed with
- * `TypeSpecLanguage.INSTANCE`. Whether `BraceHighlightingHandler` activates on the
- * plain-text PSI produced without a `ParserDefinition` (ADR 0003 F1) is unverified; if it
- * does not light up in `runIde`, this class stays registered — it activates for real once
- * M5 lands the `ParserDefinition`.
+ * `BraceMatchingUtil.getBraceMatcher` resolves via `LanguageBraceMatching.forLanguage` off
+ * `IElementType.getLanguage()`, which holds here because every [TypeSpecTokenTypes] constant
+ * is a `TypeSpecTokenType` constructed with `TypeSpecLanguage.INSTANCE`. ADR 0003 D5's "at
+ * risk" status is resolved by ADR 0005 D4: with `TypeSpecParserDefinition` now landed, file
+ * language resolves correctly and brace matching is automated-test-verified
+ * (`TypeSpecBraceMatcherTest`), not merely asserted as likely.
  */
 class TypeSpecBraceMatcher : PairedBraceMatcher {
 

@@ -23,24 +23,22 @@ class TypeSpecFileTypeTest : BasePlatformTestCase() {
     }
 
     /**
-     * Expected platform behaviour, confirmed against ideaIC-2025.2.6.3 /
-     * intellij-community source: `AbstractFileViewProvider.createFile(Language)`
-     * (AbstractFileViewProvider.java:157-163) returns `null` when no `ParserDefinition`
-     * is registered for the language, so the caller falls through to
-     * `new PsiPlainTextFileImpl(this)` (:154). `PsiPlainTextFileImpl` (:22-24) then
-     * force-overwrites `myFileType = PlainTextFileType.INSTANCE` precisely *because*
-     * the base language is not plain text.
-     *
-     * TypeSpec has no `ParserDefinition` until M5, so `psiFile.language` legitimately
-     * reports `Language.ANY`/plain text for now — that is not asserted here. What does
-     * stay correct through this fallback, and is what M1's acceptance criteria actually
-     * depends on, is the *virtual file's* file type and the *view provider's* base
-     * language, both of which are set before `PsiPlainTextFileImpl` does its override.
+     * Corrected per ADR 0005 D6 (amending ADR 0003 F1's now-stale note): `.tsp` files
+     * previously fell back to `PsiPlainTextFileImpl` because no `ParserDefinition` was
+     * registered. `TypeSpecParserDefinition` (ADR 0005 M4b) now supplies a real
+     * `TypeSpecFile` PSI, so `psiFile.language` is `TypeSpecLanguage` and `psiFile.fileType`
+     * is `TypeSpecFileType` — no plain-text fallback remains to document.
      */
     fun testConfiguredFileHasTypeSpecLanguageAndFileType() {
         val psiFile = myFixture.configureByText("demo.tsp", "namespace Demo;")
         assertEquals(TypeSpecFileType.INSTANCE, psiFile.virtualFile.fileType)
         assertEquals(TypeSpecLanguage.INSTANCE, psiFile.viewProvider.baseLanguage)
+        assertEquals(TypeSpecLanguage.INSTANCE, psiFile.language)
+        assertEquals(TypeSpecFileType.INSTANCE, psiFile.fileType)
+        assertTrue(
+            "Expected a TypeSpecFile but got ${psiFile.javaClass}",
+            psiFile is simpli.fyi.plugins.typespec.psi.TypeSpecFile,
+        )
     }
 
     fun testDefaultExtension() {

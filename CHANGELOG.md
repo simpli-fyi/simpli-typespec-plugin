@@ -24,10 +24,18 @@
   (`colorSettings/demo.tsp.txt`) exercising every category. Display strings now live in a
   new `messages.TypeSpecBundle` resource bundle (`TypeSpecBundle.kt`), registered via
   `lang.syntaxHighlighterFactory` and `colorSettingsPage` in `plugin.xml`.
-- M4: editor conveniences that need no PSI — `TypeSpecCommenter` (`//` line, `/* */` block
-  comments, `lang.commenter`), `TypeSpecBraceMatcher` (`{}` / `()` / `[]` and the `#{` / `#[`
-  value-literal openers, `lang.braceMatcher`, ships at risk per
-  `docs/adr/0003-parser-definition-timing.md` D5), and `TypeSpecQuoteHandler`
+- M4: editor conveniences — `TypeSpecCommenter` (`//` line, `/* */` block comments,
+  `lang.commenter`), `TypeSpecBraceMatcher` (`{}` / `()` / `[]` and the `#{` / `#[`
+  value-literal openers, `lang.braceMatcher`), and `TypeSpecQuoteHandler`
   (auto-close/auto-skip for `"..."` / `"""..."""`, `lang.quoteHandler`). TODO-comment
-  highlighting is deferred to M5, where `getCommentTokens()` on the incoming
-  `ParserDefinition` will feed `TodoIndexer` for free (ADR 0003 D1/D2).
+  highlighting is deferred to M5 (ADR 0003 D1/D2).
+- M4b: a minimal, flat `ParserDefinition` (`TypeSpecParserDefinition`, `lang.parserDefinition`)
+  landed ahead of M5 to fix `lang.commenter` resolution, which requires a real file
+  *language*, not just file type (see `docs/adr/0005-minimal-parser-definition-for-commenting.md`,
+  amending `docs/adr/0003-parser-definition-timing.md`). Adds a real `TypeSpecFile` PSI
+  (`PsiFileBase`) and a transitional `TypeSpecFlatParser` that wraps every lexer token as a
+  flat leaf with no grammar/PSI hierarchy — owned by M5 Task 0, which replaces the parser
+  body with the generated Grammar-Kit parser. `.tsp` files now resolve `psiFile.language` /
+  `psiFile.fileType` to TypeSpec instead of falling back to `PsiPlainTextFileImpl`, fixing all
+  6 `TypeSpecCommenterTest` cases and giving `TypeSpecBraceMatcher` / `TypeSpecQuoteHandler`
+  automated re-verification under the new PSI.
