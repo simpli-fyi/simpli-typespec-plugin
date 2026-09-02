@@ -11,5 +11,10 @@
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <fileType name="TypeSpec"
+                  implementationClass="dev.tsp.intellij.typespec.TypeSpecFileType"
+                  fieldName="INSTANCE"
+                  language="TypeSpec"
+                  extensions="tsp"/>
     </extensions>
 </idea-plugin>
