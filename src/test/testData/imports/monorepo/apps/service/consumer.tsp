@@ -1,0 +1,1 @@
+import "@acme/mono-pkg";

@@ -1,0 +1,3 @@
+model Branch {
+  id: string;
+}
