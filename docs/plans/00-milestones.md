@@ -53,6 +53,7 @@ Conventions used throughout:
 | M6e | Library-authoring surface | `extern`/`internal`/`auto` modifiers, `dec`/`fn`, `valueof`, `typeof`, `scalar` bodies, statement-level directives. | ✅ `9312eb5` |
 | M6e′ | Uncatalogued constructs | Call expressions in type position; a general trailing separator on every closed list kind. Unplanned; found by the corpus gate. ([plan 04](04-grammar-corrections.md) §M6e′) | ✅ `90b61db` |
 | M6f | Zero-baseline gate | `BASELINE.txt` deleted; the 83-file corpus test is now unconditional. | ✅ `b5ba371` |
+| M5.6 | Import + decorator navigation | Cmd-click on `import "…"` (relative **and** `@scope/pkg`) and on decorator names. Closes the owner's two live-session gaps; closes ADR 0004 open questions 1 and 2. ([plan 05](05-import-and-decorator-navigation.md), [ADR 0009](../adr/0009-decorator-reference-strategy.md), [ADR 0010](../adr/0010-library-import-resolution.md)) | planned |
 | M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. Annotator + completion build on M5.5's resolver. | **← NEXT** |
 | M6.5 | Rename, Go To Symbol, stub index | The write-side refactoring and the index that makes project-wide symbol search affordable. (ADR 0004 D6). The stub index is also option C of [ADR 0008](../adr/0008-tier-c-file-cap.md) — **pulling it ahead of M6 is an open owner decision.** | planned |
 | M7 | Compatibility + release readiness | Verified across the whole supported IDE range; CI green; metadata complete. | planned |
@@ -520,9 +521,12 @@ files. All references are **soft** — TypeSpec's built-ins and library types ar
 nowhere in user sources and must not paint the file red.
 
 Ships with Find Usages (`lang.findUsagesProvider`). **Rename and Go To Symbol do not** — they
-are M6.5 (ADR 0004 D6). Known, recorded gaps: `@decorator` navigation (blocked by M2's
-single-token `DECORATOR` design, ADR 0004 F6/open question 1) and library-type navigation
-(ADR 0004 open question 2).
+are M6.5 (ADR 0004 D6). Two gaps were recorded here and are now scheduled as **M5.6**
+([plan 05](05-import-and-decorator-navigation.md)): `@decorator` navigation (ADR 0004 open
+question 1 — resolved *without* splitting the token, [ADR 0009](../adr/0009-decorator-reference-strategy.md))
+and library-type navigation (ADR 0004 open question 2 — resolved along import edges only,
+[ADR 0010](../adr/0010-library-import-resolution.md)). Import statements themselves carry no
+reference at all in M5.5; that is the other half of M5.6.
 
 ---
 

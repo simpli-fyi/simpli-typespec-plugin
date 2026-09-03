@@ -385,14 +385,19 @@ All against **ideaIC-2025.2.6.3-aarch64** as resolved onto this project's compil
 
 ## Open questions for the project owner
 
-1. **Decorator navigation.** `@Ns.name` is a single lexer token by design (F6). Ctrl-click on
-   a decorator will do nothing. Making it work means splitting `DECORATOR` into `@` +
-   `TypeSpecQualifiedName` in the lexer and re-baselining M2's lexer tests and M3's
-   highlighter tests. Worth it, or accept the gap?
-2. **Library imports.** `import "@typespec/rest";` resolves through `node_modules` and
-   `package.json`'s `tspMain`. Reading those is plain filesystem work and needs **no**
-   `NodeJS` plugin dependency, so it is not a CE-constraint problem — but it is real scope,
-   and it is what makes built-in library types navigable. In or out?
+1. **Decorator navigation.** ✅ **CLOSED 2026-09-03 by [ADR 0009](0009-decorator-reference-strategy.md)**
+   — and closed as "the premise was wrong", not as "yes, pay the cost". The question assumed the
+   only way in was splitting `DECORATOR` in the lexer and re-baselining M2/M3. It is not: the
+   platform's documented multi-`PsiReference`-with-sub-ranges pattern hangs one reference per
+   dotted segment on the *existing* single token. Zero lexer change, zero golden change, zero
+   highlighting change. Scheduled as M5.6d ([plan 05](../plans/05-import-and-decorator-navigation.md)).
+2. **Library imports.** ✅ **CLOSED 2026-09-03 by [ADR 0010](0010-library-import-resolution.md)**
+   — *in*, with one hard qualification the original question did not anticipate: library files
+   are reached by **targeted lookup along a declared `import` edge**, never by widening a search
+   scope. [ADR 0008](0008-tier-c-file-cap.md)'s exclusion of `node_modules` from `tspScope` stays
+   exactly as shipped; re-adding it would reintroduce the observed hang. The upstream entry-point
+   rule (`exports["."]` `"typespec"` → `tspMain` → `main` → `main.tsp`) was verified against the
+   compiler's own `entrypoint-resolution.js` and six real packages. Scheduled as M5.6a.
 3. **Confirm the M6.5 split** (rename + Go To Symbol + stub index as a separate milestone,
    D6), versus folding rename into M5.5.
 4. **Confirm tier-C project widening** (D2). It is what makes navigation useful on real
