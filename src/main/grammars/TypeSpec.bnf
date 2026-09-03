@@ -206,7 +206,7 @@ private modifier_ ::= 'extern' | 'internal' | 'auto'
 // kitchen-sink's `model Widget<T extends string>` needs the bound; resolving
 // template *arguments* in type position (`Page<Pet>`) is also M5c (settled:
 // plain recursive descent, no `<`/`>` ambiguity — see plan 03 M5c Approach).
-template_parameter_list ::= '<' template_parameter (',' template_parameter)* '>' {
+template_parameter_list ::= '<' template_parameter (',' template_parameter)* trailing_comma_? '>' {
   pin=1
 }
 
@@ -268,6 +268,28 @@ private model_member_ ::= model_property | model_spread | bad_model_member_token
 // one produces red squiggles on valid code, and only the second is visible to
 // the user, so the loosening is accepted.
 private member_separator_ ::= ';' | ','
+
+// Plan 04 M6e' gap 2: trailing separator before the CLOSING punctuation of a
+// parenthesis/bracket/angle-bracket-delimited comma list (as opposed to
+// `member_separator_` above, which is the brace-bodied, per-member-optional
+// counterpart used by `model_body`/`enum_body`/`union_body`/`scalar_body`).
+// Verified against `parser.js`'s `parseList`: for every `ListKind` whose
+// `close !== Token.None` (i.e. every list with real open/close punctuation --
+// decorator/call/function arguments, template parameters/arguments, tuples,
+// array literals, `dec`/`fn`/operation parameter lists), a single occurrence
+// of the primary delimiter immediately before the close token is consumed and
+// the list ends -- `if (parseOptionalDelimiter(kind)) { if
+// (parseOptional(kind.close)) { ...break; } }`. `ListKind.Heritage` is the one
+// list kind with `open/close === Token.None` (`interface X extends A, B`) and
+// upstream's own branch for that case ("no delimiter after an item" ends the
+// list) does NOT reach this trailing-close check, so `interface_heritage_`
+// intentionally does NOT get this treatment. This rule accepts exactly one
+// trailing comma after the last real item and rejects an empty list element
+// (`(item (',' item)* trailing_comma_?)?` still requires a real `item` before
+// any comma can appear) and a doubled separator (`,,` has no second `item`
+// between the commas for the repetition to consume). Same shape as
+// `object_literal`'s already-audited `,'?` (M6a, `ListKind.ObjectLiteralProperties`).
+private trailing_comma_ ::= ','
 
 // ADR 0006 D6: same reasoning as `bad_top_level_token_` above — the
 // property-loop choice does *not* use `recoverWhile`. A `recoverWhile`
@@ -368,7 +390,7 @@ decorator_application ::= DECORATOR decorator_argument_list? {
   pin=1
 }
 
-decorator_argument_list ::= '(' (value_expression (',' value_expression)*)? ')' {
+decorator_argument_list ::= '(' (value_expression (',' value_expression)* trailing_comma_?)? ')' {
   pin=1
 }
 
@@ -377,7 +399,7 @@ decorator_argument_list ::= '(' (value_expression (',' value_expression)*)? ')' 
 // has at least one argument (the target reference); the lexer already
 // distinguishes `@@` (AUGMENT_DECORATOR) from `@` (DECORATOR), so there is no
 // ambiguity with `decorator_application` above.
-augment_decorator_statement ::= AUGMENT_DECORATOR '(' value_expression (',' value_expression)* ')' ';' {
+augment_decorator_statement ::= AUGMENT_DECORATOR '(' value_expression (',' value_expression)* trailing_comma_? ')' ';' {
   pin=1
 }
 
@@ -409,7 +431,7 @@ object_literal_member ::= identifier ':' value_expression {
 
 // `#[ value, ... ]` — same reasoning as `object_literal` above, with `#[`
 // (HASH_BRACKET) / `]` (ordinary RBRACKET literal).
-array_literal ::= '#[' (value_expression (',' value_expression)*)? ']' {
+array_literal ::= '#[' (value_expression (',' value_expression)* trailing_comma_?)? ']' {
   pin=1
 }
 
@@ -448,7 +470,7 @@ fn_statement ::= decorator_application* modifier_* 'fn' identifier dec_fn_parame
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
-dec_fn_parameter_list ::= '(' (dec_fn_parameter (',' dec_fn_parameter)*)? ')' {
+dec_fn_parameter_list ::= '(' (dec_fn_parameter (',' dec_fn_parameter)* trailing_comma_?)? ')' {
   pin=1
 }
 
@@ -585,9 +607,32 @@ typeof_expression ::= 'typeof' type_expression_ {
 // grammar competing for `<`/`>` in this position (verified against upstream
 // `parser.ts`/`spec.emu.html`; plan 03 M5c Approach/Risks, now CLOSED). No
 // external rules, no token remapping.
-private type_reference_ ::= qualified_name template_argument_list?
+//
+// Plan 04 M6e' gap 1: call expressions in type position
+// (`alias FilterVisibility<...> = applyVisibilityFilter(M, Filter, NameTemplate);`,
+// `stdlib/compiler/lib/std/visibility.tsp`; `applyMergePatchTransform(T, NameTemplate, #{...})`,
+// `stdlib/http/lib/main.tsp`). Verified directly against `parser.js`: there is no
+// separate call-expression production. `parsePrimaryExpression`'s `Token.Identifier`
+// case calls `parseCallOrReferenceExpression`, which parses the identifier/member-
+// expression target and THEN branches on the next token — `(` means
+// `ListKind.FunctionArguments` (arguments are `parseExpression()`, i.e. upstream's
+// single unified `Expression`, which `value_expression` already reaches per ADR 0007
+// D6 — so `#{...}` as an argument is covered for free); anything else falls through to
+// the existing template-argument-list path (`parseReferenceExpressionInternal`,
+// `ListKind.TemplateArguments`). Folded in here as a mutually exclusive alternative to
+// `template_argument_list`, not a new top-level rule — the two start on distinct
+// tokens (`(` vs `<`), so there is no ambiguity to resolve.
+private type_reference_ ::= qualified_name (call_argument_list | template_argument_list)?
 
-template_argument_list ::= '<' template_argument (',' template_argument)* '>' {
+// Upstream `ListKind.FunctionArguments` is `{ ...OperationParameters, invalidAnnotationTarget:
+// "expression" }` — same open/close/delimiter/trailing-comma shape as
+// `decorator_argument_list` below, hence the identical rule shape (including
+// `trailing_comma_?`, per gap 2 — `close !== Token.None` here too).
+call_argument_list ::= '(' (value_expression (',' value_expression)* trailing_comma_?)? ')' {
+  pin=1
+}
+
+template_argument_list ::= '<' template_argument (',' template_argument)* trailing_comma_? '>' {
   pin=1
 }
 
@@ -618,7 +663,7 @@ model_expression ::= '{' model_member_* '}' {
 // any (an empty `[]` here and an empty postfix are structurally the same
 // token pair; upstream treats a bare `[]` as an empty tuple, which this rule
 // also accepts).
-tuple_expression ::= '[' (type_expression_ (',' type_expression_)*)? ']' {
+tuple_expression ::= '[' (type_expression_ (',' type_expression_)* trailing_comma_?)? ']' {
   pin=1
 }
 
@@ -641,7 +686,7 @@ op_statement ::= decorator_application* 'op' identifier template_parameter_list?
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
-operation_parameter_list ::= '(' (operation_parameter (',' operation_parameter)*)? ')' {
+operation_parameter_list ::= '(' (operation_parameter (',' operation_parameter)* trailing_comma_?)? ')' {
   pin=1
 }
 

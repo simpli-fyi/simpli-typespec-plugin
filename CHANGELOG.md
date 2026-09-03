@@ -269,4 +269,60 @@
       from `BASELINE.txt` by the ratchet's next update — not done in this milestone, since
       `src/test/` is out of scope for `tsp-dev`). `corpus/real/**` is unaffected: it remained
       at 0 `BASELINE.txt` entries before and after this change.
+  - M6e (plan 04 §M6e, rows 8–12): the library-authoring surface —
+    `modifier_* ::= 'extern' | 'internal' | 'auto'` as a new prefix on `model_statement`
+    (`pin` moves `2` → `3`, still on `'model'`); `dec_statement`/`fn_statement` top-level
+    rules (`'dec'`/`'fn'` identifier `dec_fn_parameter_list` `(':' type_expression_)?` `';'`);
+    `valueof_expression`/`typeof_expression` added to `primary_type_expression`; an optional
+    `'{' scalar_member* '}'` body on `scalar_statement` (row 10, reusing
+    `dec_fn_parameter_list` for `init` constructors); a standalone top-level
+    `directive_statement` for `#suppress`/`#deprecated` (row 11; member-level directive
+    placement deliberately deferred — zero corpus occurrences). `template_parameter`'s
+    default is repointed from `type_expression_` to `value_expression` (the one straggler
+    M6a's ADR 0007 D6 unification missed). 37 corpus files move from `BASELINE.txt`-failing
+    to passing; `BASELINE.txt` itself untouched (`tsp-tester`'s file).
+  - M6e′ (this milestone) closes the two gaps M6e left open, both verified directly against
+    `@typespec/compiler`'s `parser.js` rather than assumed:
+    - **Call expressions in type position** (`alias FilterVisibility<...> =
+      applyVisibilityFilter(M, Filter, NameTemplate);`,
+      `stdlib/compiler/lib/std/visibility.tsp`; `applyMergePatchTransform(T, NameTemplate,
+      #{...})`, `stdlib/http/lib/main.tsp`). Confirmed against `parsePrimaryExpression`'s
+      `Token.Identifier` case → `parseCallOrReferenceExpression`: not a separate top-level
+      production — the identifier/member-expression target is parsed once, then branches on
+      `(` (call, `ListKind.FunctionArguments`, arguments are the general `Expression`) vs.
+      anything else (existing template-argument-list path). `private type_reference_` becomes
+      `qualified_name (call_argument_list | template_argument_list)?` and gains a new
+      `call_argument_list ::= '(' (value_expression (',' value_expression)*
+      trailing_comma_?)? ')'` sibling to `decorator_argument_list` — the two tokens `(`/`<`
+      are disjoint, so no ambiguity. `type_reference_` stays `private` and has no `pin`; no
+      pin changes anywhere from this piece.
+    - **Trailing separator in every punctuation-delimited list** (`testInputField5: string,`
+      / `): {};` in `stdlib/protobuf/test/scenarios/simple-error/input/main.tsp`'s
+      `operation_parameter_list`). Confirmed against `parser.js`'s `parseList`: for every
+      `ListKind` whose `close !== Token.None`, a single trailing occurrence of the primary
+      delimiter immediately before the close token is tolerated and ends the list —
+      independent of list kind, so fixed with one shared shape rather than case-by-case. New
+      `private trailing_comma_ ::= ','`, appended (as `trailing_comma_?`) to
+      `decorator_argument_list`, `augment_decorator_statement`'s inline argument list,
+      `array_literal`, `dec_fn_parameter_list`, `tuple_expression`, `template_parameter_list`,
+      `template_argument_list`, `operation_parameter_list` and the new `call_argument_list`.
+      `object_literal` already had the equivalent `,'?` since M6a and needed no change.
+      `interface_heritage_` deliberately excluded — upstream's `ListKind.Heritage` has
+      `open`/`close === Token.None`, which upstream's own `parseList` never routes through
+      the trailing-close branch. None of these rules had a `pin` position affected: in every
+      case `trailing_comma_?` is appended *inside* the existing optional/repeated group,
+      after the last real item and before the literal close token, so no sequence position
+      that carries a `pin` moved. The rule accepts exactly one trailing comma after a real
+      item and rejects both an empty list element and a doubled separator (a second comma
+      has no `item` between it and the first to satisfy the repetition).
+      `stdlib/protobuf/test/scenarios/simple-error/input/main.tsp` also contains two
+      deliberately-invalid semantic fixtures for the protobuf emitter (an out-of-range
+      `@field` index; `@message` applied to an `interface`) — both are checker-level
+      diagnostics, not parse errors; confirmed the file parses with zero `PsiErrorElement`s
+      once the trailing comma is accepted.
+    - No hand-authored parser golden shifted; all 190 non-ratchet tests pass unchanged.
+      `TypeSpecCorpusTest.testCorpusMatchesBaseline` now reports the full 40-file
+      `BASELINE.txt` set as newly-passing and zero undeclared regressions —
+      `corpus/real/**` remained at 0 entries throughout. `BASELINE.txt` itself is untouched
+      here (`tsp-tester`'s file, per plan 04 M6f).
 
