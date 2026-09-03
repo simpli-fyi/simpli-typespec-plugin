@@ -1,3 +1,4 @@
+import org.jetbrains.changelog.Changelog
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 
@@ -89,6 +90,20 @@ dependencies {
 
 intellijPlatform {
     pluginConfiguration {
+        // The `org.jetbrains.changelog` plugin was applied but never wired to anything, so
+        // the plugin shipped with no change notes at all. CHANGELOG.md is the single source:
+        // its section for the current version, or [Unreleased] before a release is cut.
+        changeNotes = provider {
+            with(changelog) {
+                renderItem(
+                    (getOrNull(project.version.toString()) ?: getUnreleased())
+                        .withHeader(false)
+                        .withEmptySections(false),
+                    Changelog.OutputType.HTML,
+                )
+            }
+        }
+
         ideaVersion {
             sinceBuild = "252"
             untilBuild = provider { null }

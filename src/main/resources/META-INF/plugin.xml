@@ -12,7 +12,7 @@
             <li>Navigable imports and decorator names</li>
             <li>Comment/uncomment, brace matching, quote handling, spellchecking</li>
         </ul>
-        <p>Works on a bare Community install: no LSP, no Node.js, no Ultimate-only APIs.</p>
+        <p>Works on a bare Community Edition.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
