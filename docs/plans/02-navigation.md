@@ -1,6 +1,16 @@
 # Plan 02 — Reference resolution and jump navigation (M5.5)
 
-> **Status: ratified 2026-09-02, post-M4b.** Written before M4b landed, re-read against the
+> ## Status: SHIPPED, 2026-09-03 — as M5.5a (`f1ab14a`) + M5.5b (`5fea9ef`)
+>
+> The milestone was split at the seam §Risks/9 pre-authorised. Everything this plan scoped
+> is implemented, tested and owner-confirmed in a live IDE. See §"As built" below for the
+> two real bugs the milestone surfaced, and for what remains open.
+>
+> Sequencing note: this plan ran between M6c and M6d, per
+> [ADR 0007 D11](../adr/0007-corpus-driven-grammar-acceptance.md) — its prerequisite was
+> **M6c green**, not M5c green. See [plan 04](04-grammar-corrections.md) §M5.5.
+
+> **Originally ratified 2026-09-02, post-M4b.** Written before M4b landed, re-read against the
 > shipped tree at `ce92694`, **substantively unchanged**. M4b's flat `ParserDefinition`
 > ([ADR 0005](../adr/0005-minimal-parser-definition-for-commenting.md)) produces no composite
 > element types whatsoever, so all five prerequisite checks below still fail against today's
@@ -68,6 +78,71 @@ If plan 03 shipped and this check fails, that is a plan 03 regression, not an M5
 
 A five-assertion `TypeSpecPsiContractTest` is the cheapest way to check this and is the
 first thing `tsp-tester` writes for this milestone.
+
+---
+
+## As built
+
+### M5.5a — reference resolution and go-to-declaration (`f1ab14a`, tests `bc1b101`)
+
+Tiers A (same file) and B (transitive `import` graph). `TypeSpecReference`,
+`TypeSpecResolver`, `TypeSpecScope`, `TypeSpecFileDeclarations`, `TypeSpecImportGraph`,
+`TypeSpecIdentifierManipulator`. The owner has confirmed Cmd-click / *Go To Declaration*
+working in a live IDE against a real project — the §"Done when" `runIde` checklist passed.
+
+Two real bugs were found and fixed during the milestone. Both are regression-pinned; neither
+was predicted by this plan's Risks section.
+
+1. **`StackOverflowError` resolving a `using` statement's own target** (`f1ab14a`).
+   Resolving the reference inside `using Foo.Bar;` consulted the file's `using` statements to
+   build the scope, which re-entered resolution of the same reference. Fixed with a
+   `ThreadLocal` re-entrancy guard: a reference already being resolved on this thread
+   contributes nothing to the scope, so the recursion terminates with "unresolved" rather
+   than a stack overflow. A guard, not a special case for `using` — the same cycle is
+   reachable through any scope contributor that itself resolves.
+
+2. **Fully-qualified references into dotted namespaces did not resolve** (`5528c5e`, pin
+   flipped in `822f5a4`). A blockless `namespace A.B.C;` declares *three* namespaces, and the
+   resolver indexed it once, under its full path. A reference to `A.B` therefore found
+   nothing. Fixed by indexing a dotted namespace declaration **once per own segment, under
+   its correct prefix path**, and by having `resolveSegment` carry the denoted path forward
+   rather than calling `fullPathOf` on the declaration it landed on. Multi-file
+   overlapping-namespace coverage was added in the same change.
+
+Note for anyone reading the resolver: this is the concrete consequence of
+[plan 04](04-grammar-corrections.md) §M5.5's correction — under a blockless namespace,
+`TypeSpecFile.getTopLevelDeclarations()` returns exactly one element, and the resolver
+recurses through namespaces rather than treating that accessor as "every declaration in the
+file".
+
+### M5.5b — tier C and Find Usages (`5fea9ef`, tests `bfc0b9b`)
+
+- `lang.findUsagesProvider` → `TypeSpecFindUsagesProvider`. *Find Usages* on a declaration
+  lists references grouped by declaration kind.
+- Tier C project-wide resolution via `TypeSpecSearchScopes`, word-index prefiltered
+  (`CacheManager.getVirtualFilesWithWord`, `UsageSearchContext.ANY`), with
+  `TIER_C_FILE_CAP = 50` and unresolved-on-dumb-mode.
+
+**Both cliffs are tested, and degradation is clean, never partial** — the resolver never
+parses a truncated candidate set. §Risks/3 above predicted the usefulness collapse on common
+names and it is real; it is now written up as an owner decision in
+**[ADR 0008](../adr/0008-tier-c-file-cap.md)** rather than left as a risk bullet.
+
+### What remains — M6.5
+
+Unchanged in scope from §"What this milestone does not do":
+
+| Remaining | State today |
+|---|---|
+| **Rename refactoring** | `TypeSpecIdentifierManipulator` is **registered but deliberately throws** `IncorrectOperationException("Rename is not supported until M6.5")`. It exists so the platform does not log a confusing "no manipulator" error from unrelated code paths (ADR 0004 D6). Implementing rename needs an element factory, a `NamesValidator` and backtick escaping. |
+| **Go To Symbol / Go To Class** | Not implemented. Needs the stub index to be affordable. |
+| **Stub index** | Not implemented. It is also option C of [ADR 0008](../adr/0008-tier-c-file-cap.md) — the only option that removes the tier C ceiling rather than moving it. |
+
+Still open from §Risks, unchanged: `@decorator` navigation (blocked by the one-token
+`DECORATOR` design, ADR 0004 F6), bare import specifiers (`import "@typespec/rest";`),
+resolving `Foo.bar` where `bar` is a model property / enum member / interface op, template
+parameter scoping (`T` resolves to nothing, softly), and `import` string literals as
+navigable file references.
 
 ---
 
@@ -549,7 +624,8 @@ three files:
    than a wrong jump (ADR 0004 D4), which is the mitigation, not a fix. Owner ratification
    pending (ADR 0004 open question 4).
 
-3. **Tier C usefulness collapse on common names.** `Name`, `Id`, `Error`, `Response` appear
+3. **Tier C usefulness collapse on common names.** — **FIRED; now
+   [ADR 0008](../adr/0008-tier-c-file-cap.md), an open owner decision.** `Name`, `Id`, `Error`, `Response` appear
    in most files, so the word prefilter stops discriminating, the 50-file cap fires, and
    navigation silently stops working *for exactly the names users click most*. This is the
    known ceiling of the no-stub design and the concrete trigger for M6.5's stub index. If
@@ -582,8 +658,9 @@ three files:
    encoding, so the first launch on an existing project re-indexes. Harmless, but it will
    look like a regression to anyone who does not expect it.
 
-9. **Milestone size.** This is the second-largest milestone after M5. If a single `tsp-dev`
-   run stalls, split at a clean seam: **M5.5a** = `TypeSpecReference` + `TypeSpecResolver`
+9. **Milestone size.** This is the second-largest milestone after M5. **This risk fired and
+   the split was taken as authorised** — M5.5a `f1ab14a`, M5.5b `5fea9ef`. If a single
+   `tsp-dev` run stalls, split at a clean seam: **M5.5a** = `TypeSpecReference` + `TypeSpecResolver`
    tiers A and B + `TypeSpecScope` + `TypeSpecFileDeclarations` (cases 1–14, 16–24);
    **M5.5b** = tier C (`TypeSpecSearchScopes`, case 15) + Find Usages. M5.5a is a coherent,
    shippable state on its own: navigation works within a file and across explicit imports.

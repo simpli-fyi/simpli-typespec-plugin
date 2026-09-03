@@ -4,6 +4,8 @@
 > written first but runs *after* this plan. Read this one first.
 >
 > **POST-M5c AUDIT, 2026-09-02 — §M5d is SUPERSEDED by [plan 04](04-grammar-corrections.md).**
+> **Update 2026-09-03: plan 04 is complete, and §M5d is now formally CLOSED** — see the
+> close note on that section for where each of its three constructs actually landed.
 > M5a/M5b/M5c all landed as specified and their tests pass, but the acceptance oracle they
 > were closed against was self-authored. Measured against a real production TypeSpec
 > repository, the shipped grammar produces `PsiErrorElement`s in **73 of 106 files**,
@@ -560,7 +562,34 @@ needs a new ADR. `tsp-dev` implements it in M5c without further ratification; th
 
 ---
 
-### M5d — Deferred-construct sweep (full kitchen-sink parse) — SCOPED, NOT YET PLANNED
+### M5d — Deferred-construct sweep (full kitchen-sink parse) — **CLOSED, 2026-09-03. Superseded and never executed.**
+
+> **Formal close, per [plan 04](04-grammar-corrections.md) §M6f.** M5d was superseded by
+> [plan 04](04-grammar-corrections.md) at ratification and is now closed as **completed by
+> other means**. Nothing in this section should be scheduled or implemented.
+>
+> **Where its three constructs actually landed:**
+>
+> | M5d construct | Landed in | Commit |
+> |---|---|---|
+> | statement-level directives (`#suppress` / `#deprecated`) | plan 04 §M6e | `9312eb5` |
+> | `const` + a real value-expression grammar | ADR 0007 D6 / plan 04 §M6a — `value_expression` was unified with `type_expression_`, which subsumes the whole sub-goal | `9aba27f` |
+> | `dec` / `fn` / `extern` and their parameter lists | plan 04 §M6e (as upstream's `parseModifiers()` loop, **not** an `extern_declaration` wrapper) | `9312eb5` |
+>
+> **Its done-signal is withdrawn, not transferred.** "The unmodified `kitchen-sink.tsp`
+> parses with zero `PsiErrorElement`" can never be satisfied: the file is not valid TypeSpec
+> ([ADR 0007 D10](../adr/0007-corpus-driven-grammar-acceptance.md)). The acceptance oracle
+> for grammar work is now the 83-file `TypeSpecCorpusTest` gate (ADR 0007 D1/D2), which is
+> unconditional as of `b5ba371`.
+>
+> **Its open question is closed** by [ADR 0007 D10](../adr/0007-corpus-driven-grammar-acceptance.md):
+> option (ii) — `src/test/testData/lexer/kitchen-sink.tsp` stays byte-identical and
+> lexically motivated. The valid-TypeSpec parser variant D10 called for
+> (`src/test/testData/parser/KitchenSink.tsp`) was **not created**; see the D10 addendum and
+> [plan 04](04-grammar-corrections.md) §"What this plan did not close"/1.
+>
+> Everything below this line is retained for the record only.
+
 
 **Not a prerequisite for M5.5.** [Plan 02](02-navigation.md)'s prerequisite remains **M5c
 green**; nothing in M5.5's resolver touches M5d's constructs. M5d may run before or after

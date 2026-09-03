@@ -14,7 +14,13 @@ minimal flat `ParserDefinition` lands in M4 as M4b, because `lang.commenter` res
 language and therefore cannot work on plain-text PSI),
 [ADR 0006](../adr/0006-grammar-toolchain.md) (**supersedes ADR 0002 D6**: adopt the IPGP
 `grammarkit` subplugin, bump IPGP to 2.18.1, bridge the hand-written lexer's tokens into the
-BNF via `tokenTypeFactory`, design error recovery in from the first rule).
+BNF via `tokenTypeFactory`, design error recovery in from the first rule),
+[ADR 0007](../adr/0007-corpus-driven-grammar-acceptance.md) (**the acceptance oracle for
+every grammar milestone is a vendored real-world corpus with a two-property assertion, not
+hand-authored fixtures**; supersedes plan 03 §M5d and re-sequences the remaining grammar work
+as [plan 04](04-grammar-corrections.md)),
+[ADR 0008](../adr/0008-tier-c-file-cap.md) (**OPEN** — the tier C 50-file cap, an owner
+decision, not a design conclusion).
 
 Conventions used throughout:
 
@@ -34,22 +40,57 @@ Conventions used throughout:
 | M3 | Syntax highlighter + colour settings | Tokens are coloured, and the colours are user-configurable. **← primary deliverable ships here** | ✅ `d9e5e74` |
 | M4 | Editor conveniences | Comment/uncomment, brace matching, quote handling, TODO comments. Spellchecking moved to M5 (ADR 0003). | ✅ `3c4c84c` |
 | M4b | Minimal flat `ParserDefinition` | `.tsp` gets real `TypeSpecFile` PSI so M4's language-keyed EPs resolve. No grammar (ADR 0005). | ✅ `ce92694` |
-| **M5a** | **Grammar-Kit toolchain** | **IPGP 2.18.1 + `grammarkit` subplugin; `generateParser` runs and reuses the hand-written lexer's tokens. No TypeSpec grammar. (ADR 0006)** | **← NEXT** |
-| M5b | Core grammar + PSI contract | Real tree for file/`import`/`using`/`namespace`/`model`; `TypeSpecIdentifier`, `TypeSpecQualifiedName`, `PsiNameIdentifierOwner` everywhere (ADR 0004 D7). Flat parser deleted. | planned |
-| M5c | Remaining grammar | `op`/`interface`/`enum`/`union`/`alias`/`scalar`, decorators, type expressions. Spellchecking tail (**ratified**). `KitchenSinkCore.tsp` (the M5c-scoped subset) parses clean. | planned |
-| M5d | Deferred-construct sweep | `const` + value expressions, `#suppress`/`#deprecated` directives, function-type expressions + `dec`/`fn`/`extern`. Full unmodified `kitchen-sink.tsp` parses clean. **Not a prerequisite for M5.5.** | scoped, not planned |
-| M5.5 | Reference resolution + navigation | Ctrl-click / Go To Declaration / Find Usages on a type reference. (ADR 0004, [plan 02](02-navigation.md)) | planned |
-| M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. Annotator + completion build on M5.5's resolver. | planned |
-| M6.5 | Rename, Go To Symbol, stub index | The write-side refactoring and the index that makes project-wide symbol search affordable. (ADR 0004 D6) | planned |
+| M5a | Grammar-Kit toolchain | IPGP 2.18.1 + `grammarkit` subplugin; `generateParser` runs and reuses the hand-written lexer's tokens. No TypeSpec grammar. (ADR 0006) | ✅ `902630e` |
+| M5b | Core grammar + PSI contract | Real tree for file/`import`/`using`/`namespace`/`model`; `TypeSpecIdentifier`, `TypeSpecQualifiedName`, `PsiNameIdentifierOwner` everywhere (ADR 0004 D7). Flat parser deleted. | ✅ `bec8405` |
+| M5c | Remaining grammar | `op`/`interface`/`enum`/`union`/`alias`/`scalar`, decorators, type expressions. Spellchecking tail. `KitchenSinkCore.tsp` (the M5c-scoped subset) parses clean. | ✅ `9183c50` |
+| ~~M5d~~ | ~~Deferred-construct sweep~~ | **SUPERSEDED by [plan 04](04-grammar-corrections.md); formally CLOSED 2026-09-03.** Its three constructs landed in M6a/M6e; its done-signal (unmodified `kitchen-sink.tsp` parses clean) is **withdrawn** — that file is not valid TypeSpec (ADR 0007 D10). | ✖ closed, never executed |
+| M6a | Corpus harness + decorator-argument expressions | Vendored 83-file corpus + the two-property gate (ADR 0007 D1/D2); `value_expression` unified with `type_expression_`. | ✅ `6e4f91d` |
+| M6b | Model member surface | Decorated model properties, `,` separators, optional trailing separator, spread with template args. | ✅ `4ab224e` |
+| M6c | Model heritage + multi-line strings | `model X is Y;` / `model X is Y { }`; `MULTILINE_STRING` in `literal_type`. **`corpus/real/**` reached zero failures here.** | ✅ `00fe136` |
+| M5.5a | Reference resolution + go-to-declaration | Tiers A/B. Ctrl-click / Go To Declaration on a type reference; owner-confirmed in a live IDE. ([plan 02](02-navigation.md)) | ✅ `f1ab14a` |
+| M5.5b | Tier C + Find Usages | Project-wide resolution via a word-index prefilter (`TIER_C_FILE_CAP = 50`, unresolved on dumb mode); `lang.findUsagesProvider`. | ✅ `5fea9ef` |
+| M6d | Operation + interface surface | Spread params, `op X is Y;`, `interface X extends A, B`, optional `op` prefix on members. | ✅ `3514600` |
+| M6e | Library-authoring surface | `extern`/`internal`/`auto` modifiers, `dec`/`fn`, `valueof`, `typeof`, `scalar` bodies, statement-level directives. | ✅ `9312eb5` |
+| M6e′ | Uncatalogued constructs | Call expressions in type position; a general trailing separator on every closed list kind. Unplanned; found by the corpus gate. ([plan 04](04-grammar-corrections.md) §M6e′) | ✅ `90b61db` |
+| M6f | Zero-baseline gate | `BASELINE.txt` deleted; the 83-file corpus test is now unconditional. | ✅ `b5ba371` |
+| M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. Annotator + completion build on M5.5's resolver. | **← NEXT** |
+| M6.5 | Rename, Go To Symbol, stub index | The write-side refactoring and the index that makes project-wide symbol search affordable. (ADR 0004 D6). The stub index is also option C of [ADR 0008](../adr/0008-tier-c-file-cap.md) — **pulling it ahead of M6 is an open owner decision.** | planned |
 | M7 | Compatibility + release readiness | Verified across the whole supported IDE range; CI green; metadata complete. | planned |
 
 Detail plans: [01](01-lexer-and-highlighter.md) (M1–M3), [03](03-grammar-and-psi.md)
-(M5a–M5d), [02](02-navigation.md) (M5.5). **Plan file numbers are allocation order, not
-milestone order** — plan 03 runs before plan 02.
+(M5a–M5c; §M5d closed), [04](04-grammar-corrections.md) (M6a–M6f, **complete**),
+[02](02-navigation.md) (M5.5a/b, **shipped**). **Plan file numbers are allocation order, not
+milestone order** — plan 03 ran before plan 04, and plan 02 ran between M6c and M6d
+([ADR 0007 D11](../adr/0007-corpus-driven-grammar-acceptance.md)).
 
-M5 was a single milestone; it is split into M5a/M5b/M5c (+M5d) by
+**As of 2026-09-03 the executed order was:** M0 → M1 → M2 → M3 → M4 → M4b → M5a → M5b → M5c
+→ M6a → M6b → M6c → M5.5a → M5.5b → M6d → M6e → M6e′ → M6f. Tree state: **202 tests / 0
+failures**, `verifyPlugin` **Compatible**, exactly two `<depends>`
+(`com.intellij.modules.platform`, `com.intellij.modules.spellchecker`), CE constraint intact.
+
+**What a grammar change must not break, from M6f onward.** `TypeSpecCorpusTest` is an
+unconditional gate over all **83** vendored corpus files (23 anonymised real-world + 60
+`@typespec/*` stdlib). Every file must satisfy both [ADR 0007
+D2](../adr/0007-corpus-driven-grammar-acceptance.md) properties — no `PsiErrorElement`, and
+no unclaimed leaf token. There is no baseline, no allowlist and no skip; an empty corpus
+directory is a failure. Hand-authored `.txt` goldens pin *tree shape* and are **hand-reviewed,
+never blind-rebaselined**. Note the corpus is 83 files, not the 106 the original audit
+measured: the owner's `node_modules` has no `@typespec/versioning` or `@typespec/rest`, so
+stdlib coverage is thinner than ADR 0007's Context implies.
+
+**Open owner decisions carried out of plan 04** (neither blocks M6):
+[ADR 0008](../adr/0008-tier-c-file-cap.md) — the tier C 50-file cap and its silent
+degradation; and [ADR 0007 D10's addendum](../adr/0007-corpus-driven-grammar-acceptance.md) —
+whether to create `src/test/testData/parser/KitchenSink.tsp` or retire the obligation as
+superseded by the corpus gate.
+
+M5 was a single milestone; it was split into M5a/M5b/M5c (+M5d) by
 [plan 03](03-grammar-and-psi.md), using the split authorisation the original §M5 already
-granted. M5.5 and M6.5 are decimal by [ADR 0004](../adr/0004-reference-resolution-approach.md)
+granted. M5d was then superseded by [plan 04](04-grammar-corrections.md)'s M6a–M6f and is
+closed. M5.5 was split into M5.5a/M5.5b at the seam [plan 02](02-navigation.md) §Risks/9
+pre-authorised. M6e′ was added during execution — it is not a re-planning, it is two
+constructs the corpus gate caught that the audit's construct table never catalogued, which is
+the gate doing exactly the job ADR 0007 built it for. M5.5 and M6.5 are decimal by [ADR 0004](../adr/0004-reference-resolution-approach.md)
 D5 — renumbering M6/M7 would silently falsify ADR 0002 and ADR 0003, which cite them by
 number.
 
@@ -354,7 +395,15 @@ and still passing.
 
 ---
 
-## M5 — Grammar-Kit parser and PSI → **split into M5a / M5b / M5c (+ M5d)**
+## M5 — Grammar-Kit parser and PSI → **split into M5a / M5b / M5c (+ M5d)** — ✅ COMPLETE
+
+> **Closed 2026-09-03.** M5a `902630e`, M5b `bec8405`, M5c `9183c50`. **M5d was superseded
+> by [plan 04](04-grammar-corrections.md) and formally closed without ever being executed** —
+> its constructs landed in M6a and M6e; its done-signal is withdrawn because
+> `kitchen-sink.tsp` is not valid TypeSpec ([ADR 0007 D10](../adr/0007-corpus-driven-grammar-acceptance.md)).
+> The grammar work that actually finished the job is [plan 04](04-grammar-corrections.md)
+> (M6a–M6f), sequenced by measured corpus frequency rather than construct taxonomy
+> (ADR 0007 D5).
 
 **Goal.** A parse tree for TypeSpec. This is where ADR 0001's staged plan cashes in, and
 what unblocks M5.5, M6 and M6.5.
@@ -445,7 +494,16 @@ be **read**, not merely regenerated ([ADR 0006](../adr/0006-grammar-toolchain.md
 `parseContents`-emits-one-leaf stub as a resting state (ADR 0003 D2) — M5b deletes it.
 ---
 
-## M5.5 — Reference resolution and jump navigation
+## M5.5 — Reference resolution and jump navigation — ✅ SHIPPED as M5.5a + M5.5b
+
+> **Closed 2026-09-03.** M5.5a `f1ab14a` (tiers A/B, go-to-declaration), M5.5b `5fea9ef`
+> (tier C + Find Usages). Owner-confirmed in a live IDE. Its actual prerequisite was **M6c
+> green**, not M5c green ([ADR 0007 D11](../adr/0007-corpus-driven-grammar-acceptance.md)),
+> and it ran between M6c and M6d. See [plan 02](02-navigation.md) §"As built" for the two
+> bugs it surfaced and for what carries over to M6.5.
+>
+> One risk fired: tier C's usefulness collapse on common names. It is now
+> **[ADR 0008](../adr/0008-tier-c-file-cap.md), an open owner decision.**
 
 **Goal.** Ctrl/Cmd-click, *Go To Declaration* and *Find Usages* on a TypeSpec type reference
 land on its declaration.
@@ -524,6 +582,14 @@ failure mode M5.5's 50-file cap exists to avoid.
 **Trigger for the stub index** (ADR 0004 D2's table): projects over ~1000 `.tsp` files, or
 very common segment names (`Name`, `Id`, `Error`) where the word prefilter stops
 discriminating and M5.5's cap starts firing.
+
+> **2026-09-03: that trigger has arguably already fired.** M5.5b shipped with
+> `TIER_C_FILE_CAP = 50` and a *silent* degradation — a user cannot tell "I mistyped this"
+> from "this hit the cap". [ADR 0008](../adr/0008-tier-c-file-cap.md) lays out three options
+> (raise the cap, make the degradation visible, or build the stub index) and **leaves the
+> choice to the owner**, including whether to pull M6.5's stub index ahead of M6. Rename is
+> also partly staged already: `TypeSpecIdentifierManipulator` is registered but deliberately
+> throws, so the platform does not log a spurious "no manipulator" error before M6.5.
 
 ---
 

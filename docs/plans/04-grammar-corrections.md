@@ -1,8 +1,30 @@
 # Plan 04 — Grammar corrections from the ph-cdm corpus audit
 
-**Sequence: M6a → M6b → M6c → M5.5 (navigation) → M6d → M6e → M6f.**
+**Sequence: M6a → M6b → M6c → M5.5 (navigation) → M6d → M6e → M6e′ → M6f.**
 
-> **Status: ratified 2026-09-02.** Written after auditing the tree at `9183c50` against the
+> ## Status: COMPLETE, 2026-09-03. Every milestone in this plan has shipped.
+>
+> | Milestone | Commit(s) | Notes |
+> |---|---|---|
+> | M6a — corpus harness + decorator-argument expressions | `6e4f91d`, `e2f3be8`, `9aba27f` | rename map is **hash-keyed, never plaintext** (see below) |
+> | M6b — model member surface | `4ab224e`, `6930a69` | |
+> | M6c — model heritage without a body, multi-line strings | `00fe136`, `a75aba8` | `corpus/real/**` reached **zero** failures here |
+> | M5.5a — reference resolution + go-to-declaration | `f1ab14a`, `bc1b101`, `5528c5e`, `822f5a4` | [plan 02](02-navigation.md); owner-confirmed in a live IDE |
+> | M5.5b — tier C resolution + Find Usages | `5fea9ef`, `bfc0b9b` | [plan 02](02-navigation.md) |
+> | M6d — operation/interface surface | `3514600` | |
+> | M6e — library-authoring surface | `9312eb5` | |
+> | **M6e′ — uncatalogued constructs** (unplanned; §M6e′ below) | `90b61db` | call expressions in type position; general trailing separator |
+> | M6f — zero-baseline gate | `b5ba371` | `BASELINE.txt` deleted; corpus is now an unconditional gate |
+>
+> Tree state at close: **202 tests / 0 failures**, `verifyPlugin` **Compatible**, exactly two
+> `<depends>`, CE constraint intact.
+>
+> Two items are deliberately carried forward rather than silently closed — see
+> §"What this plan did not close" at the end of this document:
+> `src/test/testData/parser/KitchenSink.tsp` (M6f / ADR 0007 D10) was **not** created, and
+> two grammar gaps are knowingly left open.
+
+> **Originally ratified 2026-09-02.** Written after auditing the tree at `9183c50` against the
 > real production TypeSpec repository at
 > `/Users/KHODIAKOVA/IdeaProjects/puenktlichhansa/ph-cdm` (read-only). Governed by
 > [ADR 0007](../adr/0007-corpus-driven-grammar-acceptance.md); supersedes
@@ -29,6 +51,17 @@ Every `.tsp` file under `ph-cdm` (23 first-party + 83 `@typespec/*` stdlib files
 `PsiErrorElement`s collected. **73 of 106 files have parse errors**, including 13 of the 23
 first-party files — every first-party file that declares anything. The clean 10 are
 one-line `import`/`using` aggregators.
+
+> **Correction, 2026-09-03 — the vendored corpus is 83 files, not 106.** The audit counted
+> 106 `.tsp` files, but the corpus actually committed under `src/test/testData/corpus/`
+> is **83 files: 23 under `real/` and 60 under `stdlib/`**. The owner's `node_modules`
+> contains neither `@typespec/versioning` nor `@typespec/rest`, so 23 of the stdlib files
+> the audit measured were never available to vendor. Stdlib coverage is therefore
+> **thinner than the audit's frequency table implies**, and per-row stdlib hit counts below
+> should be read as measurements of the *audited* tree, not of the committed corpus.
+> Concretely: no corpus file exercises `@versioning`'s decorator surface or `@rest`'s route
+> and resource templates, so any construct unique to those two packages is untested here.
+> Re-syncing after installing them is the cheapest way to widen the oracle.
 
 | # | Construct | Example | ph-cdm hits / files | stdlib hits / files | Lands in |
 |---|---|---|---|---|---|
@@ -63,7 +96,15 @@ Two findings not in the table:
 
 ---
 
-### M6a — Corpus harness + decorator-argument expressions
+### M6a — Corpus harness + decorator-argument expressions  ✅ SHIPPED (`6e4f91d`, `e2f3be8`, `9aba27f`)
+
+> **As-built deviation from the plan below.** The first attempt committed the rename map in
+> **plaintext**, publishing exactly the domain terms ADR 0007 D4.2's procedure exists to keep
+> out of the repository. It was corrected to the hash-keyed form this plan specifies
+> (`ANONYMISATION.md` keys by *target* name plus a stable hash of the source name), and the
+> git history was **rewritten** so the plaintext map never existed on any reachable commit.
+> Anyone re-running `tools/corpus-sync/anonymise.py` must keep it hash-keyed; a plaintext
+> map is a licence/confidentiality defect, not a convenience.
 **Goal:** the reported defect is fixed, and the project gains the independent oracle whose
 absence let it ship ([ADR 0007 D1–D3](../adr/0007-corpus-driven-grammar-acceptance.md)).
 
@@ -223,7 +264,11 @@ the test. An empty corpus directory is a **failure**, never a skip.
 
 ---
 
-### M6b — Model member surface (rows 1, 5, 6)
+### M6b — Model member surface (rows 1, 5, 6)  ✅ SHIPPED (`4ab224e`, `6930a69`)
+
+> As built: `model_spread ::= '...' type_expression_ member_separator_?`, and
+> `member_separator_?` added to `model_property`, `enum_member` and `union_variant`.
+> `DECORATOR` added to `bad_model_member_token_`. Goldens hand-reviewed, not rebaselined.
 **Goal:** every model body in the corpus parses. Largest single win — row 1 alone is 366
 occurrences across 51 files.
 
@@ -275,7 +320,16 @@ loosening as a comment in the `.bnf`.
 
 ---
 
-### M6c — Model heritage without a body, and multi-line strings (rows 3, 4)
+### M6c — Model heritage without a body, and multi-line strings (rows 3, 4)  ✅ SHIPPED (`00fe136`, `a75aba8`)
+
+> As built: `model X is Y;` and `model X is Y { … }` are **distinct alternatives** of
+> `model_statement`, and `MULTILINE_STRING` is wired into `literal_type`. `corpus/real/**`
+> reached **zero** failures at this milestone — the visible goal of the plan.
+>
+> One tightening beyond the plan: `model X extends Base is Other { … }` — both heritage forms
+> at once — is now correctly **rejected**. A `TypeSpecPsiContractTest` fixture had been
+> resting on the old permissiveness and had to be corrected; that fixture was asserting a
+> shape the grammar should never have produced.
 **Goal:** the last two constructs blocking the owner's repository. **This is the milestone
 at which `ph-cdm` is clean in the IDE** — the visible goal of the whole plan, and the
 natural release-candidate point if the owner later wants one
@@ -327,7 +381,11 @@ point. Re-review both recovery goldens.
 
 ---
 
-### M5.5 — Reference resolution and jump navigation
+### M5.5 — Reference resolution and jump navigation  ✅ SHIPPED as M5.5a (`f1ab14a`) + M5.5b (`5fea9ef`)
+
+> Split at the seam [plan 02](02-navigation.md) §Risks/9 pre-authorised. Details, including
+> the two real bugs the milestone surfaced and what remains open, are recorded in
+> [plan 02](02-navigation.md) §"As built".
 
 **Runs here**, between M6c and M6d, per
 [ADR 0007 D11](../adr/0007-corpus-driven-grammar-acceptance.md).
@@ -371,7 +429,11 @@ not `corpus/stdlib/**`.
 
 ---
 
-### M6d — Operation and interface surface (row 7 + heritage forms)
+### M6d — Operation and interface surface (row 7 + heritage forms)  ✅ SHIPPED (`3514600`)
+
+> As built: spread operation parameters, `op X is Y;`, `interface X extends A, B`, optional
+> `op` prefix on interface members. `interface I is X` stays **rejected**, pinned by a
+> negative fixture (ADR 0007 D9's corollary).
 **Goal:** operation signatures in the stdlib parse.
 
 **Files:** `src/main/grammars/TypeSpec.bnf`;
@@ -407,7 +469,19 @@ shape, `interface is`) are closed by ADR 0007.
 
 ---
 
-### M6e — Library-authoring surface (rows 8–12)
+### M6e — Library-authoring surface (rows 8–12)  ✅ SHIPPED (`9312eb5`)
+
+> **As-built deviation.** `extern` is *not* an `extern_declaration` wrapper rule as the
+> Approach below proposes. It is implemented the way upstream does it — a `parseModifiers()`
+> loop over `extern` / `internal` / `auto` as a modifier prefix on the declaration that
+> follows. The wrapper would have forced a second copy of every declaration rule and would
+> not have covered `internal` / `auto` at all. `dec` and `fn` are real statements with their
+> own `dec_fn_parameter_list` (their parameters are not operation parameters upstream).
+> Also landed: `valueof`, `typeof`, `scalar` bodies with `init`, statement-level directives.
+> `model_statement`'s pin moved **2 → 3** to accommodate the modifier prefix.
+>
+> Member-level (model/enum/union) directive placement — flagged in the Approach as the hard
+> part — was **not** implemented. See §"What this plan did not close".
 **Goal:** `node_modules/@typespec/**` parses clean, so *Go to declaration* lands somewhere
 that is not red.
 
@@ -440,7 +514,93 @@ out rather than blocking rows 8–10.
 
 ---
 
-### M6f — Zero-baseline gate
+### M6e′ — Uncatalogued constructs: call expressions and the general trailing separator  ✅ SHIPPED (`90b61db`)
+
+**Not in the original plan.** M6e closed rows 8–12 and the corpus still failed. Two constructs
+were failing that the audit's construct table never catalogued — the audit's regex-driven
+survey categorised failures by *the construct it was looking for*, so a construct nobody
+thought to look for was counted as a generic "parse error" against whichever row happened to
+be nearby. This section exists so that the two are documented somewhere other than a `.bnf`
+comment, and so the *reason* the audit missed them is on record.
+
+Both were resolved against the primary source — `@typespec/compiler`'s shipped
+`dist/src/core/parser.js` — not inferred from the corpus.
+
+**Goal:** the remaining corpus failures after M6e, all of which reduce to these two.
+
+**Files:** `src/main/grammars/TypeSpec.bnf`; parser fixtures under
+`src/test/testData/parser/`.
+
+#### Gap 1 — call expressions in type position
+
+```tsp
+alias FilterVisibility<...> = applyVisibilityFilter(Model, Filter, NameTemplate);
+// stdlib/compiler/lib/std/visibility.tsp
+applyMergePatchTransform(T, NameTemplate, #{ … })
+// stdlib/http/lib/main.tsp
+```
+
+**Upstream basis.** There is **no separate call-expression production**.
+`parsePrimaryExpression`'s `Token.Identifier` case delegates to
+`parseCallOrReferenceExpression`, which parses the identifier/member-expression target and
+*then* branches on the next token: `(` starts `ListKind.FunctionArguments`, whose elements are
+`parseExpression()` — upstream's single unified `Expression`; anything else falls through to
+the existing template-argument path (`parseReferenceExpressionInternal`,
+`ListKind.TemplateArguments`).
+
+**As built.** Folded into the existing reference rule as a mutually exclusive alternative,
+*not* a new top-level rule:
+
+```
+private type_reference_ ::= qualified_name (call_argument_list | template_argument_list)?
+call_argument_list ::= '(' (value_expression (',' value_expression)* trailing_comma_?)? ')' { pin=1 }
+```
+
+`(` and `<` are distinct tokens, so the choice is unambiguous and needs no lookahead.
+Arguments route through `value_expression`, which ADR 0007 D6 already unified with
+`type_expression_` — so `#{ … }` as a call argument works for free.
+
+#### Gap 2 — a general trailing separator on every list kind
+
+`member_separator_?` (M6b) covers the *brace-bodied, per-member-optional* case. It does not
+cover a trailing delimiter before a **closing punctuation token** — `<T, U,>`, `(a, b,)`,
+`[1, 2,]`, `#[1, 2,]`, `@dec(a, b,)`.
+
+**Upstream basis.** `parseList` tolerates one trailing delimiter before the close token for
+**every** `ListKind` whose `close !== Token.None`. That is a property of the shared list
+parser, not of any individual production — which is exactly why a per-construct audit could
+never have found it.
+
+**As built.** `private trailing_comma_ ::= ','`, applied to every closed list:
+`template_parameter_list`, `template_argument_list`, `call_argument_list`,
+`decorator_argument_list`, `augment_decorator_statement`, `array_literal`,
+`tuple_expression`, `operation_parameter_list`, `dec_fn_parameter_list`.
+
+**The one exception, and it matters.** `ListKind.Heritage` has `close: Token.None`, so it does
+**not** reach the trailing-delimiter tolerance. `interface I extends A, B` therefore correctly
+**rejects** `interface I extends A, B,` — `interface_heritage_` deliberately does not carry
+`trailing_comma_`. Applying the rule uniformly "for consistency" would have been wrong; the
+asymmetry is upstream's, and it is load-bearing.
+
+**Acceptance (as tested):** parser fixtures at `doTest(true, true)` for call expressions in
+alias/property/argument positions and for a trailing separator in each closed list kind; the
+corpus gate green.
+
+**Done when:** `./gradlew clean build test verifyPlugin` green. ✅
+
+---
+
+### M6f — Zero-baseline gate  ✅ SHIPPED (`b5ba371`), with one item outstanding
+
+> As built: `src/test/testData/corpus/BASELINE.txt` is **deleted** and `TypeSpecCorpusTest`
+> is an unconditional gate — all **83** corpus files must satisfy both ADR 0007 D2
+> properties. A failure reports the observed file, offset, line and source snippet rather
+> than a stored categorisation, so a regression is diagnosable from the test output alone.
+>
+> **Not done: `src/test/testData/parser/KitchenSink.tsp` / `.txt`** (ADR 0007 D10). The
+> valid-TypeSpec parser variant of `src/test/testData/lexer/kitchen-sink.tsp` was never
+> created; only the M5c-era `KitchenSinkCore.tsp` exists. This is **outstanding, not moot** —
+> see §"What this plan did not close" and the ADR 0007 D10 addendum.
 **Goal:** delete the ratchet; the corpus becomes an absolute assertion.
 
 **Files:** delete `src/test/testData/corpus/BASELINE.txt`; modify `TypeSpecCorpusTest.kt`;
@@ -471,6 +631,59 @@ tree.
 
 ---
 
+## What this plan did not close
+
+Three items are knowingly open at plan close. None blocks anything shipped; all three are
+recorded here so a future contributor does not rediscover them as bugs.
+
+### 1. `src/test/testData/parser/KitchenSink.tsp` — outstanding
+
+M6f's Files list and [ADR 0007 D10](../adr/0007-corpus-driven-grammar-acceptance.md) both call
+for a valid-TypeSpec parser-side variant of `src/test/testData/lexer/kitchen-sink.tsp`, with
+the invalid `interface Store { values: #[1, 2, 3]; }` rewritten as an operation signature.
+**It was not created.** Only the M5c-era `KitchenSinkCore.tsp` / `.txt` exist. The lexer copy
+is untouched and byte-identical, as D10 requires, so nothing is *wrong* — the artefact is
+simply missing.
+
+It is **outstanding rather than moot**, but its value has dropped sharply: the 83-file corpus
+gate is a strictly stronger oracle than a single team-authored kitchen-sink file, and it is
+exactly the independent oracle ADR 0007 §Context/2 says the kitchen-sink file was a poor
+substitute for. Reasonable dispositions, for the owner: (a) create it as a cheap, readable
+single-file smoke test; (b) formally retire the D10 obligation as superseded by the corpus
+gate. Do not record it as shipped.
+
+### 2. Member-level directive placement — unimplemented, zero corpus need
+
+`#suppress` / `#deprecated` are implemented as `directive_statement`, a **statement-level**
+construct: a directive is parsed as a sibling preceding the declaration it annotates, rather
+than as a prefix attached to it. Upstream attaches a directive list to the following node.
+For parsing purposes the two are equivalent — the directive is consumed, no token is
+unclaimed, no error element is produced — but the PSI shape differs from upstream's AST, so
+a future feature that asks "which directives apply to this model?" will need the attachment,
+not just the token.
+
+**Member-level placement (a directive inside a model / enum / union body) is not implemented
+at all.** No corpus file needs it: the corpus has six directive occurrences in total, all
+statement-level. Implementing it means threading a directive prefix through every member rule
+and re-verifying every pin in the same change — invasive, and currently unmotivated.
+
+### 3. `valueof` / `typeof` are more permissive than upstream
+
+Both are folded into `primary_type_expression` as prefix operators, per M6e's own Approach
+line. Upstream is narrower: `valueof` is restricted to mixed-constraint positions (template
+parameter constraints and `dec`/`fn` parameter types), and `typeof`'s target is a restricted
+primary (identifier / string / bool / number / paren / nested `typeof`), not a full type
+expression. As built, `valueof` is legal in a handful of positions upstream would reject, and
+`typeof` accepts a wider target.
+
+This is the same tradeoff M6b's Risks section already accepted and is recorded in the `.bnf`
+at the rules themselves: an over-permissive grammar yields a wrong tree on invalid input,
+an under-permissive one yields **red squiggles on valid code**, and only the second is
+visible to the user. All 92 `valueof` occurrences in the corpus parse. Tighten only if a
+real construct is being mis-shaped, not on principle.
+
+---
+
 ## Decision log
 
 | Q | Decision | By | Recorded |
@@ -480,5 +693,12 @@ tree.
 | OQ3 | `interface Store { values: #[1,2,3]; }` is **invalid**; option (ii) — `kitchen-sink.tsp` untouched, a valid variant added in M6f | architect, verified against `parseInterfaceStatement` | ADR 0007 D10; §M6f |
 | OQ4 | Sequence **M6a → M6b → M6c → M5.5 → M6d → M6e → M6f**; publishing deferred per ADR 0002 D7; M6c noted as the natural RC point | owner | ADR 0007 D11; this document's header |
 
-**No open questions remain.** A new one must be raised as an ADR amendment, not resolved
-inline by `tsp-dev`.
+**No open questions remained at ratification.** Two were raised *during* execution and are
+recorded properly rather than resolved inline:
+
+| Q | Status | Where |
+|---|---|---|
+| OQ3 / D10 follow-through — `KitchenSink.tsp` | **open**, owner to dispose (create, or retire the obligation) | §"What this plan did not close"/1; [ADR 0007 D10 addendum](../adr/0007-corpus-driven-grammar-acceptance.md) |
+| Tier C `TIER_C_FILE_CAP = 50` — UX of silent degradation | **open**, owner decision | [ADR 0008](../adr/0008-tier-c-file-cap.md) |
+
+A new one must be raised as an ADR amendment, not resolved inline by `tsp-dev`.

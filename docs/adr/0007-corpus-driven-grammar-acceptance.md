@@ -2,7 +2,7 @@
 
 - **Status:** **accepted 2026-09-02.** Owner ratified D4 (corpus vendoring) and D11
   (sequencing); D9/D10 resolved by the architect against upstream primary sources.
-- **Date:** 2026-09-02
+- **Date:** 2026-09-02 (D10 addendum 2026-09-03)
 - **Supersedes:** nothing. **Amends:** [ADR 0006](0006-grammar-toolchain.md) §D8/D9
   (acceptance oracle for grammar milestones), [plan 03](../plans/03-grammar-and-psi.md)
   §M5c "Kitchen-sink scope resolution" and §M5d.
@@ -88,6 +88,18 @@ assertion is a tree walk, not a grammar change — do **not** make the `bad_*` r
 to make this easier; that changes every existing golden.
 
 ### D3 — The corpus is vendored into the repository, not read from an absolute path
+
+> **Measurement correction, 2026-09-03.** This ADR's Context and Consequences say "106
+> files". The corpus actually vendored under `src/test/testData/corpus/` is **83 files: 23
+> under `real/`, 60 under `stdlib/`**. The owner's `node_modules` contains neither
+> `@typespec/versioning` nor `@typespec/rest`, so 23 of the stdlib files counted in the
+> audit were never available to copy. **Stdlib coverage is thinner than this ADR implies** —
+> nothing in the corpus exercises `@versioning`'s decorators or `@rest`'s route and resource
+> templates. Installing those two packages and re-syncing `corpus/stdlib/` (a straight copy,
+> plus a `PROVENANCE.md` update in the same commit, per D4.1) is the cheapest available
+> widening of the oracle. The "106" figures elsewhere in this document are left as written:
+> they are accurate statements about the *audited* tree.
+
 
 `src/test/testData/corpus/` holds committed copies. Reasons: the audit's ad-hoc run read
 `/Users/KHODIAKOVA/IdeaProjects/puenktlichhansa/ph-cdm` directly, which is single-machine,
@@ -223,6 +235,36 @@ is (M2's lexer golden is untouched, and the file remains lexically motivated —
 token coverage, not validity), and M6f introduces a *separate* valid-TypeSpec variant,
 `src/test/testData/parser/KitchenSink.tsp`, as the parser-side target. Plan 03 §M5d's
 standing open question is hereby closed.
+
+#### D10 addendum, 2026-09-03 — the first half shipped; the second half did not
+
+Reported by `tsp-tester` and verified against the tree at `b5ba371`.
+
+- **Shipped and correct:** `src/test/testData/lexer/kitchen-sink.tsp` is byte-identical and
+  untouched. The grammar was **not** widened to accept a property in an interface body;
+  `interface I is …` and interface properties both still error, pinned by negative fixtures.
+  The load-bearing half of D10 — "do not corrupt the grammar or the lexer golden to make a
+  test file pass" — holds.
+- **Not done:** `src/test/testData/parser/KitchenSink.tsp` / `.txt` was never created. The
+  only kitchen-sink parser fixture in the tree is the M5c-era `KitchenSinkCore.tsp`. M6f
+  listed the file in its Files block and shipped without it.
+
+This is **outstanding, not moot** — but its value has fallen. D10 specified the variant when
+the kitchen-sink file was still the project's best parser-side oracle. It no longer is: the
+unconditional 83-file `TypeSpecCorpusTest` gate (D1/D2, live as of `b5ba371`) is strictly
+stronger, and is precisely the *independent* oracle §Context/2 argues a team-authored
+kitchen-sink file cannot be.
+
+**Owner's call**, two acceptable dispositions:
+
+(a) create the variant as a cheap, human-readable single-file smoke test — it has real value
+as documentation of "what a rich TypeSpec file looks like to our parser", separate from its
+value as an oracle; or
+
+(b) formally retire this obligation as superseded by the corpus gate, and amend D10 to say
+so.
+
+Do not record it as shipped under either disposition until the corresponding work is done.
 
 ### D11 — OQ4, sequencing: M6a → M6b → M6c → M5.5, then M6d–M6f (owner, 2026-09-02)
 
