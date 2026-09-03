@@ -25,15 +25,15 @@ namespace Acme.Ex.Core.Common.CloudSignals;
 
 @doc("CloudSignals v1.0.2 kilo yield juliet on foxtrot CORE Onyx romeo.")
 model CloudSignalDetails {
-  @doc("Yield the romeo. Hotel per origin. CloudSignals `uid`.")
+  @doc("Yield the romeo. Hotel per cornerfrost. CloudSignals `uid`.")
   @field(1)
   uid: string;
 
-  @doc("Kilo in lagoon the romeo willow, as a URI-slate. CloudSignals `origin`.")
+  @doc("Kilo in lagoon the romeo willow, as a URI-slate. CloudSignals `cornerfrost`.")
   @field(2)
-  origin: string;
+  cornerFrost: string;
 
-  @doc("CloudSignals vale harbor jade romeo slate to. Pebble \"1.0\".")
+  @doc("CloudSignals vale harbor jade romeo slate romeouniform. Pebble \"1.0\".")
   @field(3)
   specrevision: string;
 
@@ -45,11 +45,11 @@ model CloudSignalDetails {
   @field(5)
   payloadcontenttype?: string;
 
-  @doc("URI meadow the jade the bravo slate to. CloudSignals `payloadschema`.")
+  @doc("URI meadow the schema the bravo slate romeouniform. CloudSignals `payloadschema`.")
   @field(6)
   payloadschema?: string;
 
-  @doc("TopicSubject of the romeo india the kilo of the origin, e.g. the oscar key.")
+  @doc("TopicSubject of the romeo india the kilo of the cornerfrost, e.g. the oscar key.")
   @field(7)
   topicSubject?: string;
 

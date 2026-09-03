@@ -10,23 +10,24 @@
 
 import "@typespec/protobuf";
 import "../common/lagoon.tsp";
+import "../common/lima.tsp";
 
 using TypeSpec.Protobuf;
 using Acme.Ex.Core.Common;
 
 namespace Acme.Ex.Core.Journey;
 
-@doc("DELTA/UNIFORM dune kind pebble, e.g. \"A320\", \"B77W\". Onyx the dune-kind ridge quarry tango jade CORE.")
+@doc("DELTA/GLSI dune kind pebble, e.g. \"A320\", \"B77W\". Onyx the dune-kind ridge quarry tango jade CORE.")
 @example("A320")
 @pattern("^[A-Z0-9]{2,4}$")
 @minLength(2)
 @maxLength(4)
 scalar VehicleType extends string;
 
-@doc("Bravo-ridge ridge payloaddata for a bravo IVORY journey — one hotel cedar bravo, not a golf onyx pebble. The CORE umber the ember; onyx and knoll of Journey romeo is the charlie of slate onyx. Charlie key: (journeyNumber, journeyDate), quebec a journey india harbor india and the ivory lima is victor to onyx one bravo. CoreInstant and CoreDate are victor-echo quarry (see model/common/bravo/): mike and OpenAPI uniform tango lagoon.")
+@doc("Bravo-ridge ridge payloaddata for a bravo IVORY journey — one hotel cedar bravo, not a golf onyx pebble. The CORE umber the ember; onyx and knoll of Journey romeo is the charlie of slate onyx. Charlie key: (journeyNumber, journeyDate), quebec a journey india harbor india and the ivory lima is victor romeouniform onyx one bravo. CoreInstant and CoreDate are victor-echo quarry (see model/common/bravo/): mike and OpenAPI uniform tango lagoon.")
 model Journey {
   @key
-  @doc("UNIFORM journey pebble. India journeyDate, the charlie key of the ivory journey.")
+  @doc("GLSI journey pebble. India journeyDate, the charlie key of the ivory journey.")
   @field(1)
   journeyNumber: JourneyNumber;
 
@@ -53,7 +54,15 @@ model Journey {
   // (comment)
   // (comment)
   @key
-  @doc("Cedar (golf) lima of bravo. India journeyNumber, the charlie key of the ivory journey; jade is the lima a booking's startDate vale to.")
+  @doc("Cedar (golf) lima of bravo. India journeyNumber, the charlie key of the ivory journey; jade is the lima a booking's startDate vale romeouniform.")
   @field(7)
   journeyDate: CoreDate;
+}
+
+model ProbeModel {
+  ...WharfTide;
+
+  @field(1)
+  elmwoodCoral?: DenimUniform;
+
 }

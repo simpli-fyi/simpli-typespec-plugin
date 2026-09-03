@@ -45,10 +45,14 @@ how the derivation works so it is re-runnable and auditable.
 
 Grammar keywords (from `_TypeSpecLexer.flex`), builtin scalar types, the
 library/namespace names actually referenced (`TypeSpec`, `Protobuf`,
-`JsonSchema`, `Timestamp`, `WellKnown`), and the standard decorator/parameter
+`JsonSchema`, `Timestamp`, `WellKnown`), the standard decorator/parameter
 names actually used (`doc`, `example`, `pattern`, `minLength`, `maxLength`,
 `key`, `field`, `package`, `service`, `title`, `friendlyName`, `name`,
-`scope`, `jsonSchema`). The full list lives in `anonymise.py`'s `ALLOWLIST`
+`scope`, `jsonSchema`), and directive names (`deprecated`, `suppress` — the
+word after `#` in `#deprecated "..."`/`#suppress "code" "message"`; added
+2026-09-03, see `anonymise.py`'s `DIRECTIVE_NAMES` comment — without this,
+the generic code-identifier substitution renamed the directive's own name).
+The full list lives in `anonymise.py`'s `ALLOWLIST`
 — duplicating it here would only let the two drift.
 
 ## Rename map — keyed by hash, not by source name
@@ -133,6 +137,7 @@ a90bab6ff81b -> KIND
 baaddf70fb5d -> Kind
 c97c29c7a71b -> PAYLOADDATA
 cec3a9b89b2e -> PayloadData
+a951d2652b6c -> ProbeModel
 82601d1f2649 -> REL
 005f543ec63f -> SYNC
 8d14f6e72de8 -> Signals
@@ -175,7 +180,7 @@ a878411de821 -> feedProductIdentifierValue
 ac2c2d798758 -> journeyDate
 ddc6e5cea6ea -> journeyNumber
 1303c06b0b01 -> kind
-41cf6794ba42 -> origin
+41cf6794ba42 -> cornerFrost
 b2138a36590d -> originChannel
 9890b098defa -> originNotePayload
 ae112a309131 -> originNoteSource
@@ -202,6 +207,144 @@ cb6c363a3b53 -> travelerId
 a56145270ce6 -> uid
 c9b358039139 -> vehicleType
 8b47045eb7b8 -> voided
+00a8d9f4325e -> BravoEcho
+0682c5f2076f -> opalDelta
+07e45833e48d -> whiskeyUmber
+099b592263a6 -> HazeNectar
+0bc70684cf30 -> QuayOrchid
+0f82aca66af9 -> sierraNook
+100dd8256091 -> TwigRill
+105522105b55 -> sierraHaze
+106ab12bd58e -> emberZinc
+11a62c23412b -> lagoonRomeo
+12e7b6a96fb0 -> BirchHeath
+15acff77b001 -> DeltaNook
+181fdd46fc4a -> urnBirch
+1c710521454f -> XyloLagoon
+1c7dcb61328b -> julietWillow
+1e2fa1acc1bd -> WharfTide
+213dc61507f9 -> MeadowUrn
+23575b4fe7ef -> DenimUniform
+24f72f184c98 -> NovemberKarst
+2876814bd73a -> RomeoArbor
+28b3c427e84f -> zincJasper
+28da5377c03b -> WHVI
+29184abadb40 -> papaKilo
+29abdbc9220e -> graniteGranite
+2b3ae370bc15 -> meadowDell
+2b5c3d26721a -> UmberLagoon
+31fc79fe0b80 -> LagoonYield
+338cc70fe925 -> victorFoxtrot
+3527ab98cc26 -> jasperWillow
+353e41e6afe3 -> hotelPlum
+36752d6cd147 -> RomeoPond
+36cd5d6c4b9e -> meadowOpal
+39e0f5efdc39 -> quillAlpha
+3a400f040dfb -> plumXylo
+3e317255d52e -> PapaGranite
+3ea70380368b -> terracePapa
+4075fa5b1f71 -> VineShoal
+41a5a80d2492 -> birchVictor
+43dd6319b609 -> quillOscar
+45f07c8328b0 -> opalDune
+466e5b9cd57f -> valeTide
+4c08c7e5890e -> alphaFlint
+4c45659981ce -> nookNook
+4d8fa801a136 -> meadowFoxtrot
+4e949ed24711 -> TerraceJade
+51bda150e1ae -> ORUN
+5437557296f1 -> marshUpland
+56ef8f20955f -> FlintBravo
+58e544702007 -> GroveJade
+5f948aff5e67 -> WharfShoal
+609b22285b21 -> coralEcho
+61592bfd7abb -> QuaySierra
+617988d45e7b -> UniformNook
+62d7a6b1211d -> shoalGlacier
+655c32fb8455 -> sierraGrove
+66097bcfd7f1 -> sableMike
+663ea1bfffe5 -> romeoUniform
+67f34a499543 -> YieldGlacier
+6a4d0b38642c -> JasperAmber
+6ad6ee4458a0 -> hazeLinen
+6b88ea92537a -> papaBirch
+6cb574fa10b6 -> irisCedar
+70a9248f48e3 -> whiskeyPapa
+724485a4452f -> ElmYield
+73c5719388ad -> linenElmwood
+75857a458999 -> bravoSlate
+772ff735aeb5 -> nookOnyx
+78f9ac018e55 -> basaltPlum
+796e68840fd9 -> WrenNectar
+7b3dbd0ed43d -> quebecViolet
+7c4483cece55 -> indiaKilo
+7ca74ffe68a5 -> JulietTide
+7f27cdc0653b -> ValePlum
+8164491ab256 -> quarryGrove
+835ad550b57d -> HotelElmwood
+85a0c348e2a1 -> QuarryHeath
+85ba1d5b0019 -> isletEmber
+884650b62760 -> GLSI
+89df968deab7 -> JadeTwig
+8feb8254b964 -> uniformPond
+924dba7b2f75 -> opalHaze
+933ac6cbb9ba -> LAAR
+955baaa520f5 -> slateOpal
+9575b6ed7307 -> quayOnyx
+965395613b2d -> xyloPond
+9666d9e88994 -> valeTwig
+969ccbd3cf63 -> FrostTwig
+97b0560280ed -> coralSlate
+9d978dbcca71 -> marshGranite
+9e375cbd79ad -> uniformViolet
+a3e1f4935b09 -> birchDelta
+a427e2d222d6 -> MossShoal
+a4b445d453ba -> AlphaVine
+a735f4e2ac49 -> MeadowViolet
+a7ea4f60d1c7 -> JadeRidge
+ab53a71c37ef -> TwigTwig
+ac2beb8dc315 -> WrenKelp
+b0ace42e8218 -> karstOscar
+b285cb8bbaf4 -> cedarAlpha
+b50c135402fc -> fernLagoon
+b577f5060e0c -> cedarUpland
+b958ce8b871a -> HeathAlpha
+b9c8abfe8961 -> pebbleHarbor
+b9f9f12d69a7 -> mossLinen
+be95383651fb -> FrostFrost
+c2de4e74f115 -> SlateLoam
+c45f2e1ca667 -> zincOpal
+c5949af0d288 -> QuebecTango
+c634b65c4e9f -> graniteRomeo
+c74b39c30045 -> valeHeath
+cb3d223775d5 -> nectarQuarry
+cc20d3cbe3e6 -> twigPond
+cc6b6bad31a0 -> papaFern
+cd42404d52ad -> emberDelta
+cd48812ef5a3 -> JulietMoss
+cd7dda49449c -> LimaGranite
+cff13c13cb1f -> CharlieKarst
+d0fdb6a274a2 -> DeltaWharf
+d4c891e5b48d -> BrookKelp
+d7b302179ba8 -> HarborVine
+d80c9bf910f1 -> rillHotel
+da3b17323f0a -> ElmwoodFlint
+dc48b60197b0 -> mikeMike
+de9feaea8b66 -> arborReed
+dec0f004eaa0 -> birchFern
+e06e7033af7e -> IvoryMeadow
+e17f73ea15ab -> reedTide
+e2ab079900f0 -> sableIndia
+e5c6fde86910 -> elmwoodHotel
+ed6d54c62c80 -> flintFoxtrot
+f274621969ba -> romeoAmber
+f57bd40c4423 -> golfFoxtrot
+fb1293dc95c1 -> plumEcho
+fbb1a7571a95 -> rillIvory
+fbb71a24f7fc -> violetSable
+fde9a7f500ba -> flintLima
+ff02936b2810 -> elmwoodCoral
+ff63b0467d55 -> umberUmber
 ```
 
 ## Re-sync procedure

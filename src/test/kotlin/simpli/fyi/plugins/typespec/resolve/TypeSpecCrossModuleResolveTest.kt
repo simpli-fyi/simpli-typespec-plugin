@@ -115,6 +115,66 @@ class TypeSpecCrossModuleResolveTest : BasePlatformTestCase() {
         assertEquals("shared.tsp", target.containingFile.name)
     }
 
+    // ---- 4: regression for `50ec08f` -- a member-level directive earlier in the SAME blockless
+    // dotted namespace must not stop a later declaration in that namespace from being visible to
+    // a second file's `using`. This is the exact owner shape (ADR 0011 §Context case 3) plus the
+    // directive that broke it: `standards.tsp` declared `namespace A.B.C;` (blockless, dotted),
+    // a model with a member-level `#deprecated`, and `MetaData`/`VolumeUnit` further down: before
+    // `50ec08f` those two vanished from the PSI tree entirely, so this `using`+bare-reference
+    // resolved to nothing. -----------------------------------------------------------------
+
+    fun testDeclarationAfterMemberDirectiveResolvesAcrossModules() {
+        installNoiseFiles()
+        tsp(
+            "standards/standards.tsp",
+            """
+            namespace A.B.C;
+
+            model Widget {
+              #deprecated "use Gadget instead"
+              @key id: string;
+            }
+
+            scalar VolumeUnit extends string;
+            model MetaData {}
+            """.trimIndent(),
+        )
+        val app = tsp(
+            "consumer/consumer.tsp",
+            """
+            using A.B.C;
+            model Measurement {
+              measurementVolume: VolumeUnit;
+              ...MetaData;
+            }
+            """.trimIndent(),
+        )
+
+        assertTrue((app as simpli.fyi.plugins.typespec.psi.TypeSpecFile).getImportStatements().isEmpty())
+        myFixture.configureFromExistingVirtualFile(app.virtualFile)
+        val text = myFixture.file.text
+
+        val volumeUnitOffset = text.indexOf("measurementVolume: VolumeUnit") + "measurementVolume: ".length
+        val volumeUnitTarget = myFixture.file.findReferenceAt(volumeUnitOffset)?.resolve()
+        assertTrue(
+            "expected VolumeUnit (declared AFTER the member-level directive in standards.tsp) " +
+                "to resolve to a scalar statement, got $volumeUnitTarget",
+            volumeUnitTarget is TypeSpecScalarStatement,
+        )
+        assertEquals("VolumeUnit", (volumeUnitTarget as TypeSpecNamedElement).name)
+        assertEquals("standards.tsp", volumeUnitTarget.containingFile.name)
+
+        val metaDataOffset = text.indexOf("...MetaData") + "...".length
+        val metaDataTarget = myFixture.file.findReferenceAt(metaDataOffset)?.resolve()
+        assertTrue(
+            "expected MetaData (declared AFTER the member-level directive in standards.tsp) to " +
+                "resolve to a model statement, got $metaDataTarget",
+            metaDataTarget is TypeSpecModelStatement,
+        )
+        assertEquals("MetaData", (metaDataTarget as TypeSpecNamedElement).name)
+        assertEquals("standards.tsp", metaDataTarget.containingFile.name)
+    }
+
     // ---- 3: the leading `Shared` segment itself resolves to the namespace --------------------
 
     fun testQualifiedCrossModuleLeadingSegmentResolvesToNamespace() {

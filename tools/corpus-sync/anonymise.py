@@ -77,7 +77,37 @@ DECORATOR_NAMES = {
     "visibility", "encode", "encodedName", "discriminator",
 }
 
-ALLOWLIST = KEYWORDS | BUILTIN_SCALARS | LIBRARY_NAMES | DECORATOR_NAMES
+# Directive names (`#deprecated "..."`, `#suppress "code" "message"`). Same
+# reserved-word class as DECORATOR_NAMES above -- built-in TypeSpec
+# vocabulary, not user domain content, and rule 1 requires them preserved
+# byte-for-byte. The tokeniser (SEGMENT_RE) has no special case for a `#name`
+# directive: it falls into the generic "code" segment, and transform_code's
+# IDENTIFIER_RE matches the bare word after `#` (the `#` character itself
+# isn't part of IDENTIFIER_RE) and runs it through rename_identifier like any
+# other code identifier. Without this set, "deprecated"/"suppress" get
+# silently renamed to filler, and `#deprecated`/`#suppress` disappear from
+# the anonymised output entirely -- caught by --verify's failure-profile
+# self-check (the `directive` category: source=2, dest=0) the first time a
+# re-sync ran against a source tree that actually has one (tsp-tester,
+# 2026-09-03 re-sync).
+DIRECTIVE_NAMES = {"deprecated", "suppress"}
+
+# Substrings of a stdlib PACKAGE SPECIFIER (`import "@typespec/json-schema";`) that
+# `transform_import_target` already preserves byte-for-byte (rule 1: content starting
+# with `@` is untouched, per ADR 0007). "schema" is exactly the ALLOWLIST-comment's own
+# documented failure mode: a source tree can ALSO legitimately use it as a plain
+# user-declared property name, and if it is mapped as a renameable identifier while
+# ALSO appearing untouched inside "@typespec/json-schema", the untouched occurrence
+# makes `TypeSpecCorpusTest#testCorpusRealHasNoDomainLeakage` flag the innocuous
+# package-specifier text as a leak (found re-syncing 2026-09-03). Reserved here rather
+# than mapped, matching how `jsonSchema` (the decorator) already is above. NOTE for
+# future maintainers: do not restate the specific source-side declaration that
+# triggered this in a comment here -- that is itself exactly the leak this file's
+# hash-keyed design exists to prevent; describe the *shape* of the collision, never
+# the schema content that produced it.
+PACKAGE_SPECIFIER_WORDS = {"schema"}
+
+ALLOWLIST = KEYWORDS | BUILTIN_SCALARS | LIBRARY_NAMES | DECORATOR_NAMES | DIRECTIVE_NAMES | PACKAGE_SPECIFIER_WORDS
 
 IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
@@ -382,6 +412,48 @@ def fingerprint_tree(root: Path) -> dict[str, int]:
     return counts
 
 
+# ---------------------------------------------------------------------------
+# Staleness guard (tsp-tester, 2026-09-03): `fingerprint_tree` above proves
+# source and freshly-anonymised dest have the same construct-category SHAPE
+# at sync time, but nothing re-checks that later, so a hand-edit (or simply
+# forgetting to re-run this tool after a real upstream change) to
+# `corpus/real` goes silently unnoticed by every later test run -- which is
+# exactly the failure mode that let the member-directive/decorator grammar
+# defect (fixed in 4c4c191) sit undetected: the vendored corpus had drifted
+# out of sync with what a real re-sync would have produced.
+#
+# `content_fingerprint` is a SHA-256 over the *anonymised* (dest-tree, i.e.
+# already-committed) file count and content -- never the source tree, so
+# nothing source-side is ever hashed into a value that could be reversed or
+# fingerprinted against the private repo. It is deliberately independent of
+# `fingerprint_tree`'s construct-category counts (which are about SHAPE
+# parity with an upstream checkout this tool cannot always reach); this one
+# is a plain "has the committed tree changed since it was last recorded as
+# verified" check, cheap enough for `TypeSpecCorpusTest` to redo, byte for
+# byte, every `./gradlew test` run with zero access to any upstream source.
+def content_fingerprint(root: Path) -> tuple[int, str]:
+    files = sorted(
+        (f for f in root.rglob("*.tsp") if "node_modules" not in f.parts),
+        key=lambda f: f.relative_to(root).as_posix(),
+    )
+    digest = hashlib.sha256()
+    for f in files:
+        rel = f.relative_to(root).as_posix()
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\n")
+        digest.update(f.read_bytes())
+        digest.update(b"\n")
+    return len(files), digest.hexdigest()
+
+
+def print_content_fingerprint(root: Path) -> None:
+    count, sha = content_fingerprint(root)
+    print("```corpus-fingerprint")
+    print(f"files: {count}")
+    print(f"sha256: {sha}")
+    print("```")
+
+
 def anonymise_tree(source: Path, dest: Path, rename: dict[str, str]) -> list[Path]:
     written = []
     for src_file in sorted(source.rglob("*.tsp")):
@@ -416,10 +488,27 @@ def main() -> int:
              "you saw in the source tree (this tool looks up a handful of casing "
              "variants at rename time, but the map itself is exact-match).",
     )
+    ap.add_argument(
+        "--print-fingerprint",
+        metavar="DIR",
+        type=Path,
+        help="print the ```corpus-fingerprint``` block (file count + SHA-256 over the "
+             "already-anonymised .tsp content) for DIR and exit -- hashes only committed, "
+             "already-anonymised content, never anything source-side. Paste the printed "
+             "block into corpus/real/PROVENANCE.md's own fingerprint block in the same "
+             "commit as any corpus/real change (re-sync OR hand edit); "
+             "TypeSpecCorpusTest re-derives and checks it every test run, so a corpus "
+             "change without a matching PROVENANCE.md update fails loudly instead of "
+             "silently going stale.",
+    )
     args = ap.parse_args()
 
     if args.hash is not None:
         print(name_hash(args.hash))
+        return 0
+
+    if args.print_fingerprint is not None:
+        print_content_fingerprint(args.print_fingerprint)
         return 0
 
     if not (args.source and args.map and args.dest):
@@ -470,6 +559,11 @@ def main() -> int:
                 else:
                     shutil.copy2(item, dst)
         print(f"Wrote anonymised corpus to {args.dest}")
+        print(
+            "Paste the block below into corpus/real/PROVENANCE.md's fingerprint block "
+            "in this same commit (staleness guard -- TypeSpecCorpusTest checks it):"
+        )
+        print_content_fingerprint(args.dest)
         return 0
     else:
         try:

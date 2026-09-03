@@ -169,6 +169,11 @@ class TypeSpecCorpusTest : BasePlatformTestCase() {
         val genericProseWords = setOf(
             "id", "type", "time", "data", "source", "status", "subject", "reason", "cause",
             "state", "kind", "slot", "sync", "origin", "instant", "uid",
+            // Added 2026-09-03 re-sync: common English words that are ALSO now mapped
+            // identifiers (bare property names the owner's tree happens to use), so they
+            // collide with this tool's own prose/comments and other hand-authored fixtures'
+            // ordinary vocabulary the same way the pre-existing entries above do.
+            "from", "to", "length", "value", "function", "original", "current", "actual",
         )
         // Case variants too: the real scan below hashes (word, lower, upper, capitalised)
         // for every candidate, so a generic word is only actually inert against every
@@ -210,6 +215,10 @@ class TypeSpecCorpusTest : BasePlatformTestCase() {
             "maxValue", "key", "field", "package", "service", "title",
             "friendlyName", "name", "scope", "jsonSchema", "summary", "format",
             "visibility", "encode", "encodedName", "discriminator",
+            // DIRECTIVE_NAMES (added 2026-09-03, anonymise.py's `DIRECTIVE_NAMES`)
+            "deprecated", "suppress",
+            // PACKAGE_SPECIFIER_WORDS (added 2026-09-03, anonymise.py's `PACKAGE_SPECIFIER_WORDS`)
+            "schema",
         )
 
         val offenders = mutableListOf<String>()
@@ -281,6 +290,66 @@ class TypeSpecCorpusTest : BasePlatformTestCase() {
         extraFiles.forEach { scan(it, proseHashes) }
 
         assertTrue(offenders.joinToString("\n"), offenders.isEmpty())
+    }
+
+    /**
+     * Staleness guard (tsp-tester, 2026-09-03): the member-directive/decorator grammar defect
+     * (fixed in `4c4c191`) sat undetected in part because `corpus/real` had drifted out of sync
+     * with a real upstream checkout, and nothing made that drift loud. This test re-derives the
+     * same content fingerprint `anonymise.py --print-fingerprint` computes -- file count plus a
+     * SHA-256 over `relPath\ncontent\n` for every `.tsp` file under `corpus/real`, sorted by relative
+     * path -- and compares it against the `` ```corpus-fingerprint``` `` block recorded in
+     * `corpus/real/PROVENANCE.md`. It hashes only already-anonymised, already-committed content
+     * (never anything source-side), so a hand-edit to a fixture, a partial re-sync, or simply
+     * forgetting to regenerate this block after a real re-sync now fails loudly here instead of
+     * silently -- exactly the staleness class that let the grammar defect above go unnoticed.
+     */
+    fun testCorpusFingerprintMatchesRecorded() {
+        val realRoot = File(corpusRoot, "real")
+        assertTrue("corpus/real missing: $realRoot", realRoot.isDirectory)
+
+        val files = realRoot.walkTopDown()
+            .filter { it.isFile && it.extension == "tsp" && "node_modules" !in it.path.split(File.separatorChar) }
+            .sortedBy { it.relativeTo(realRoot).path.replace(File.separatorChar, '/') }
+            .toList()
+
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        for (f in files) {
+            val rel = f.relativeTo(realRoot).path.replace(File.separatorChar, '/')
+            digest.update(rel.toByteArray(Charsets.UTF_8))
+            digest.update('\n'.code.toByte())
+            digest.update(f.readBytes())
+            digest.update('\n'.code.toByte())
+        }
+        val actualSha = digest.digest().joinToString("") { "%02x".format(it) }
+        val actualCount = files.size
+
+        val provenanceFile = File(realRoot, "PROVENANCE.md")
+        assertTrue("corpus/real/PROVENANCE.md missing: $provenanceFile", provenanceFile.isFile)
+        val provenanceText = provenanceFile.readText()
+        val block = Regex("```corpus-fingerprint\\n(.*?)\\n```", RegexOption.DOT_MATCHES_ALL)
+            .find(provenanceText)?.groupValues?.get(1)
+        assertTrue(
+            "corpus/real/PROVENANCE.md has no ```corpus-fingerprint``` block -- run " +
+                "`python3 tools/corpus-sync/anonymise.py --print-fingerprint " +
+                "src/test/testData/corpus/real` and add the printed block to PROVENANCE.md",
+            block != null,
+        )
+        val recordedCount = Regex("files:\\s*(\\d+)").find(block!!)?.groupValues?.get(1)?.toIntOrNull()
+        val recordedSha = Regex("sha256:\\s*([0-9a-f]+)").find(block)?.groupValues?.get(1)
+
+        val mismatch = recordedCount != actualCount || recordedSha != actualSha
+        assertTrue(
+            "corpus/real has drifted from the fingerprint recorded in PROVENANCE.md -- if this " +
+                "is a deliberate change (a real re-sync or a hand-edited fixture), regenerate " +
+                "the block with `python3 tools/corpus-sync/anonymise.py --print-fingerprint " +
+                "src/test/testData/corpus/real` and update PROVENANCE.md in the same commit; " +
+                "if it is NOT deliberate, corpus/real changed without anyone updating its own " +
+                "provenance record -- treat that as the bug.\n" +
+                "  recorded: files=$recordedCount sha256=$recordedSha\n" +
+                "  actual:   files=$actualCount sha256=$actualSha",
+            !mismatch,
+        )
     }
 
     // ------------------------------------------------------------------

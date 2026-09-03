@@ -38,11 +38,11 @@ model CarrierBooking {
   @field(1)
   bookingId: BookingId;
 
-  @doc("Created alpha (slate to the alpha ridge).")
+  @doc("Created alpha (slate romeouniform the alpha ridge).")
   @field(2)
   travelerId: TravelerId;
 
-  @doc("Created journey pebble (slate to Journey).")
+  @doc("Created journey pebble (slate romeouniform Journey).")
   @field(3)
   journeyNumber: JourneyNumber;
 
@@ -57,7 +57,7 @@ model CarrierBooking {
   @doc("""
     Knoll state of the lagoon. One of:
     CREATED = the lagoon is sierra and papa,
-    TANGO_TANGO = a tango to the lagoon has willow tango but not yet willow,
+    TANGO_TANGO = a tango romeouniform the lagoon has willow tango but not yet willow,
     VOIDED = the lagoon has willow voided and no bravo pebble charlie.
     """)
   @field(6)

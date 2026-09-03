@@ -192,4 +192,33 @@ class TypeSpecParsingTest : ParsingTestCase("parser", "tsp", TypeSpecParserDefin
      *  silently swallowed -- `trailing_comma_?` accepts at most one comma directly after a
      *  real item, never a bare comma standing in for one. */
     fun testTrailingSeparatorsRejected() = doTest(true)
+
+    /**
+     * Regression for `4c4c191`: a member-level `#deprecated "..."` directive inside a `model`
+     * body parses clean, zero `PsiErrorElement`. Upstream's `parseAnnotations()` collects
+     * directives and decorators together, in any order, as a shared prefix of the item they
+     * annotate -- so the fixed grammar's `member_annotation_ ::= decorator_application |
+     * directive_statement` is now the leading prefix of `model_property` itself, and
+     * `DIRECTIVE_STATEMENT` is the property's *first child* (sibling of `@key`), not a sibling
+     * of `MODEL_PROPERTY` in `MODEL_BODY`. Golden hand-reviewed 2026-09-03: dumped via
+     * `toParseTreeText`, confirmed zero `PsiErrorElement` and zero unclaimed leaves, and that the
+     * directive/decorators/identifier/colon/type/semicolon all nest correctly under the single
+     * `MODEL_PROPERTY` for `id`, matching upstream's "annotations attach to the item" model.
+     */
+    fun testMemberDirectiveInModel() = doTest(true, true)
+
+    /**
+     * Regression for `4c4c191`, follow-on to [testMemberDirectiveInModel]: this fixture used to
+     * pin a **swallow bug** -- `directive_argument_`'s bare-`identifier` alternative had no guard,
+     * so `#deprecated "..."` directly followed by an *undecorated* property (no decorator to
+     * absorb the ambiguity) greedily ate that property's leading identifier as one more
+     * `directive_argument_`, corrupting `id: string;` into bare unclaimed leaves under
+     * `MODEL_BODY`. The fix added a `!(':' | '?')` guard to that alternative, rejecting an
+     * identifier that actually starts the next member. Renamed (it no longer swallows anything):
+     * `id: string;` now parses as a proper `MODEL_PROPERTY`, with `DIRECTIVE_STATEMENT` as its
+     * first child, same shape as [testMemberDirectiveInModel]'s `id` property minus the decorator.
+     * Golden hand-reviewed 2026-09-03 the same way: zero `PsiErrorElement`, zero unclaimed leaves,
+     * `id`'s colon/type/semicolon all correctly nested under `MODEL_PROPERTY`.
+     */
+    fun testMemberDirectivePropertyAfterDirective() = doTest(true, true)
 }
