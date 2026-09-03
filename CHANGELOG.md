@@ -191,4 +191,18 @@
   - M6c done-signal: all 9 remaining `corpus/real/**` entries in `BASELINE.txt` (6 row3, 3
     row4) now parse clean with zero `PsiErrorElement`s and zero unclaimed leaves — the
     corpus-driven done-signal for `ph-cdm` going clean in the editor (ADR 0007 D11).
+  - M5.5a navigation bug: a fully-qualified reference through a dot-nested `namespace`
+    declaration (`namespace A.B.C;`, referenced as `A.B.C.Model`) failed to resolve (plan 02
+    acceptance case 7). `TypeSpecFileDeclarations.build` indexed such a declaration only
+    under its last dotted segment (`"C"`), never the virtual intermediate segments `"A"`/
+    `"A.B"`, so resolving the leading segment `"A"` found nothing and the whole chain
+    returned null. Every segment of a dotted namespace declaration is now indexed under its
+    own prefix path, pointing at the same `namespace` statement — there is no separate
+    declaration site for the virtual segments, so `A`, `A.B` and `A.B.C` in `A.B.C.Model` all
+    resolve to that one statement, exactly like a reopened non-dotted namespace with the same
+    name would. `TypeSpecResolver` no longer derives a trailing segment's namespace path via
+    `TypeSpecScope.fullPathOf` on the resolved element (which would collapse every dotted
+    segment onto the declaration's one full path); it now reconstructs the denoted path as
+    "the path a segment was found under" + "its own name", recursively, for both dotted and
+    block-nested namespaces.
 

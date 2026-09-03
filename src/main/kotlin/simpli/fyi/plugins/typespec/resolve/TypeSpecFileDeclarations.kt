@@ -59,12 +59,28 @@ class TypeSpecFileDeclarations private constructor(
             fun walk(container: PsiElement, path: NamespacePath) {
                 for (child in PsiTreeUtil.getChildrenOfTypeAsList(container, TypeSpecNamedElement::class.java)) {
                     ProgressManager.checkCanceled()
-                    val name = child.name ?: continue
-                    byName.getOrPut(name) { mutableListOf() }.add(path to child)
                     if (child is TypeSpecNamespaceStatement) {
+                        // A dotted namespace declaration (`namespace A.B.C;`) is sugar for
+                        // nesting: it declares `A`, `A.B` and `A.B.C`. There is no standalone
+                        // declaration of the intermediate segments `A`/`A.B` anywhere in the
+                        // file, so every segment is indexed here under its own prefix path,
+                        // pointing at this same statement — the nearest thing to a declaration
+                        // site those virtual segments have. This also makes overlapping dotted
+                        // prefixes across files (`A.B.C` in one, `A.B.D` in another) behave like
+                        // any other reopened namespace: resolving `A` yields one candidate per
+                        // statement that establishes that prefix, exactly as resolving a
+                        // shared, non-dotted namespace name already does.
+                        var prefix = path
+                        for (segment in TypeSpecScope.segmentsOf(child)) {
+                            byName.getOrPut(segment) { mutableListOf() }.add(prefix to child)
+                            prefix = NamespacePath(prefix.segments + segment)
+                        }
                         val childPath = NamespacePath(path.segments + TypeSpecScope.segmentsOf(child))
                         containers.getOrPut(childPath) { mutableListOf() }.add(child)
                         walk(child, childPath)
+                    } else {
+                        val name = child.name ?: continue
+                        byName.getOrPut(name) { mutableListOf() }.add(path to child)
                     }
                 }
             }
