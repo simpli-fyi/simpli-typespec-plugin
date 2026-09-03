@@ -81,6 +81,17 @@
     // are) purely so they can be referenced bare below.
     VALID_ESCAPE='regexp:\\[^]'
     INVALID_ESCAPE='regexp:\\[^]'
+    // M6c row 4: `"""..."""` triple-quoted multi-line strings. Unlike STRING's
+    // STRING_S escape-run state, `_TypeSpecLexer.flex`'s YYINITIAL rule for a
+    // *terminated* `"""..."""` (line 53) matches the whole literal — open
+    // quotes, body (including embedded newlines: `[^\"]` is not
+    // newline-exclusive), close quotes — in one shot and returns a SINGLE
+    // MULTILINE_STRING token; the MULTILINE_STRING_S state (line 54/197-200)
+    // is reached only for an *unterminated* literal running to EOF. Verified
+    // by reading the actual token stream (TypeSpecLexerTest), not assumed:
+    // every well-formed triple-quoted literal in the corpus is one token, so
+    // `literal_type` below needs a bare `MULTILINE_STRING`, not a `+` run.
+    MULTILINE_STRING='regexp:\"\"\"([^\"]|\"[^\"]|\"\"[^\"])*\"\"\"'
   ]
 }
 
@@ -143,7 +154,21 @@ namespace_statement ::= decorator_application* 'namespace' qualified_name (names
 
 private namespace_block_ ::= '{' top_level_item_* '}'
 
-model_statement ::= decorator_application* 'model' identifier template_parameter_list? extends_clause? is_clause? model_body {
+// Plan 04 M6c row 3 / ADR 0007 D9: repointed from "extends_clause? is_clause?
+// model_body" (which forced a body after `is` too) to two separate
+// alternatives, matching the shipped compiler's `parseModelStatement` exactly
+// (ADR 0007 primary-source facts table): `is` alone admits EITHER `;` OR a
+// body (`model X is Y;` and `model X is Y { ... }` are both valid, 23+ corpus
+// occurrences of the former, `@typespec/http/lib/streams/main.tsp`'s
+// `JsonlStream` the latter); `extends` (or neither) still REQUIRES a body —
+// `model M extends Foo;` stays a `PsiErrorElement` (ModelExtendsNoBodyIsError.tsp
+// locks this). Do NOT collapse this back into a single optional `model_body?`
+// on one shared clause — that would legalise `extends ... ;` too, which is not
+// valid TypeSpec. `pin=2` is unaffected: it still marks 'model' itself, the
+// point of no return, and neither new alternative changes the position of
+// elements before it.
+model_statement ::= decorator_application* 'model' identifier template_parameter_list?
+    ( (is_clause (';' | model_body)) | (extends_clause? model_body) ) {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
@@ -404,7 +429,7 @@ private template_argument ::= (identifier '=' type_expression_) | type_expressio
 // A string literal is `STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*`, not
 // a bare `STRING` — see the `VALID_ESCAPE`/`INVALID_ESCAPE` tokens= comment
 // above for why an escape splits one source literal into several leaf tokens.
-literal_type ::= STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)* | NUMBER | 'true' | 'false'
+literal_type ::= STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)* | MULTILINE_STRING | NUMBER | 'true' | 'false'
 
 paren_type_expression ::= '(' type_expression_ ')' {
   pin=1

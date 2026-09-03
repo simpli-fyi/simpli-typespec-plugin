@@ -154,4 +154,19 @@
     other six files `BASELINE.txt` had labelled row1 are, after `model_property`'s decorator
     fix, actually blocked by row3 (`model X is Y;`) or row4 (triple-quoted strings) — both
     M6c scope, correctly left failing here.
+  - M6c (plan 04 §M6c, ADR 0007 D9): `model_statement`'s heritage now matches
+    `@typespec/compiler`'s `parseModelStatement` exactly — `model X is Y;` **and**
+    `model X is Y { … }` are both valid (`is_clause (';' | model_body)`), while `extends`
+    (or no heritage at all) still requires a body (`extends_clause? model_body`).
+    `model M extends Foo;` remains a `PsiErrorElement`. `pin=2` (on `'model'`) is unaffected.
+  - M6c row 4: `MULTILINE_STRING` is declared in the `.bnf` `tokens=[…]` block and added as
+    an alternative of `literal_type`, so `"""…"""` triple-quoted strings are now usable as a
+    decorator argument (`@doc("""…""")`) and a property default — the lexer already emitted
+    the token (`_TypeSpecLexer.flex`), the grammar simply never referenced it. Confirmed via
+    `TypeSpecLexerTest` that one well-formed multi-line literal yields exactly one
+    `MULTILINE_STRING` token (unlike `STRING`'s escape-run splitting), so no `+` repetition
+    is needed.
+  - M6c done-signal: all 9 remaining `corpus/real/**` entries in `BASELINE.txt` (6 row3, 3
+    row4) now parse clean with zero `PsiErrorElement`s and zero unclaimed leaves — the
+    corpus-driven done-signal for `ph-cdm` going clean in the editor (ADR 0007 D11).
 
