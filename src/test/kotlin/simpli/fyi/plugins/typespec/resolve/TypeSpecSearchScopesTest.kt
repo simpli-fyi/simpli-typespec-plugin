@@ -2,6 +2,8 @@ package simpli.fyi.plugins.typespec.resolve
 
 import com.intellij.testFramework.DumbModeTestUtils
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import simpli.fyi.plugins.typespec.psi.TypeSpecModelStatement
+import simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement
 
 /**
  * Tier C's two behavioural cliffs ([ADR 0004](../../../../../../../../docs/adr/0004-reference-resolution-approach.md)
@@ -101,5 +103,111 @@ class TypeSpecSearchScopesTest : BasePlatformTestCase() {
 
         assertNull("no exception (in particular no IndexNotReadyException) may escape dumb mode", threw)
         assertNull("filesContainingWord must return null while DumbService.isDumb == true", result)
+    }
+
+    // ---- node_modules exclusion (ADR 0008 perf investigation, `dbd7825`) ---------------------
+
+    /**
+     * Regression pin for the second real-IDE hang cause: `tspScope` used to include
+     * `node_modules` unconditionally (`GlobalSearchScope.projectScope` does not exclude it on a
+     * CE-only, non-Node-plugin project), which let a vendored package's own bundled test
+     * fixtures eat tier C's file cap for a word that also appears throughout the owner's own
+     * source (ADR 0008, `TypeSpecSearchScopes` KDoc). A `.tsp` file under a `node_modules` path
+     * segment must never be a tier C candidate; an otherwise-identical file outside one must.
+     */
+    fun testFilesContainingWordExcludesNodeModulesFileButIncludesSibling() {
+        myFixture.addFileToProject(
+            "vendor/node_modules/@typespec/protobuf/vendored.tsp",
+            """
+            namespace VendorScope {
+              model VendorWidget {}
+            }
+            """.trimIndent(),
+        )
+        myFixture.addFileToProject(
+            "src/owned.tsp",
+            """
+            namespace OwnScope {
+              model VendorWidget {}
+            }
+            """.trimIndent(),
+        )
+
+        val hits = TypeSpecSearchScopes.filesContainingWord(project, "VendorWidget")
+        assertNotNull(hits)
+        val hitNames = hits!!.map { it.name }.toSet()
+        assertEquals(
+            "expected only the file outside node_modules — actual candidates: $hitNames",
+            setOf("owned.tsp"),
+            hitNames,
+        )
+    }
+
+    /** Same assertion, but directly against [TypeSpecSearchScopes.tspScope]'s `contains`. */
+    fun testTspScopeContainsExcludesNodeModulesPathSegment() {
+        val nodeModulesFile = myFixture.addFileToProject(
+            "vendor/node_modules/@typespec/rest/lib.tsp",
+            "namespace Lib {}",
+        ).virtualFile
+        val ownedFile = myFixture.addFileToProject(
+            "src/lib.tsp",
+            "namespace Lib {}",
+        ).virtualFile
+
+        val scope = TypeSpecSearchScopes.tspScope(project)
+        assertFalse("node_modules file must be excluded from tspScope", scope.contains(nodeModulesFile))
+        assertTrue("a sibling file outside node_modules must be included in tspScope", scope.contains(ownedFile))
+    }
+
+    /**
+     * End-to-end: a tier C resolution into a merged namespace still succeeds when a
+     * `node_modules`-vendored decoy file declares the SAME namespace and member name. Confirms
+     * excluding `node_modules` did not break resolution within the owner's own corpus — the
+     * decoy must be invisible to the resolver, and the real owner-code target must still be
+     * found.
+     */
+    fun testTierCResolutionIgnoresNodeModulesDecoyAndStillResolvesOwnerCode() {
+        myFixture.addFileToProject(
+            "vendor/node_modules/decoy-pkg/decoy.tsp",
+            """
+            namespace Shared {
+              model NodeModulesDecoyTarget {}
+            }
+            """.trimIndent(),
+        )
+        val ownFile = myFixture.addFileToProject(
+            "src/decoy-target-owner.tsp",
+            """
+            namespace Shared {
+              model NodeModulesDecoyTarget {}
+            }
+            """.trimIndent(),
+        )
+        val referencingFile = myFixture.addFileToProject(
+            "src/decoy-target-referencer.tsp",
+            """
+            namespace Shared {
+              model User {
+                t: NodeModulesDecoyTarget;
+              }
+            }
+            """.trimIndent(),
+        )
+
+        myFixture.configureFromExistingVirtualFile(referencingFile.virtualFile)
+        val text = myFixture.file.text
+        val offset = text.lastIndexOf("NodeModulesDecoyTarget")
+        assertTrue(offset >= 0)
+        val reference = myFixture.file.findReferenceAt(offset)
+        assertNotNull(reference)
+        val target = reference!!.resolve()
+        assertTrue("expected the owner-code decl to resolve, got $target", target is TypeSpecModelStatement)
+        assertEquals("NodeModulesDecoyTarget", (target as TypeSpecNamedElement).name)
+        assertEquals(
+            "must resolve to the owner-code file, not the node_modules decoy",
+            "decoy-target-owner.tsp",
+            target.containingFile.name,
+        )
+        assertEquals(ownFile.virtualFile, target.containingFile.virtualFile)
     }
 }
