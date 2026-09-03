@@ -275,6 +275,27 @@
 
 ### Fixed
 
+- Confirmed resolution bug, real repro (ph-cdm `model/flight/flight.tsp` / `model/shared/standards.tsp`):
+  `...MetaData;` and `defaultMeasurementVolume?: VolumeUnit;` failed to resolve even though
+  `flight.tsp` directly `import`s `standards.tsp` (tier A/B territory, not a stub-index case).
+  Root cause was **not** the dotted-blockless-namespace path computation (that code was already
+  correct on both the stub and PSI paths) but a grammar gap: `model_member_` had no alternative
+  for a member-level `#deprecated`/`#suppress` `directive_statement` (M6e had deliberately deferred
+  this — zero corpus occurrences at the time). Hitting one mid-body broke `model_property`'s own
+  parse attempt, fell through to `bad_model_member_token_` one token at a time, and never
+  resynchronized before the model's closing `'}'`, which then surfaced as a second, unrelated
+  parse error — and because the enclosing `namespace_statement` here is the file's own blockless,
+  `';'`-bodied form (whose body is `top_level_item_*`, with no closing brace of its own to recover
+  at), every declaration textually after the broken model — including `MetaData` and `VolumeUnit`,
+  hundreds of lines later — was silently dropped from the PSI tree and never entered the stub
+  index at all. Fix: `model_member_` now accepts `directive_statement` as a first-class
+  alternative (`enum`/`union`/`interface` member positions are unchanged — no confirmed repro
+  needs them). Verified against the owner's real file content (in-memory fixture, no content-root
+  change): both references now resolve to their declarations in `standards.tsp`; stripping the
+  two `#deprecated` occurrences already made the repro pass, confirming the diagnosis before the
+  grammar fix and after it. No stub format, encoding, external-ID or `node_modules`-predicate
+  change, so `TypeSpecStubVersion.VERSION` is not bumped.
+
 - Grammar corrections from the ph-cdm corpus audit (plan 04 M6a/M6b; see
   `docs/adr/0007-corpus-driven-grammar-acceptance.md`):
   - `value_expression` is unified with `type_expression_` (ADR 0007 D6), so decorator and

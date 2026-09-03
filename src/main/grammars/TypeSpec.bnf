@@ -274,7 +274,25 @@ model_body ::= '{' model_member_* '}' {
   pin=1
 }
 
-private model_member_ ::= model_property | model_spread | bad_model_member_token_
+// `directive_statement` (`#deprecated "..."`/`#suppress "code" "msg"`) is a
+// valid model member per upstream (`parseModelPropertyOrSpread`'s caller loop
+// admits a leading directive on any member, not just top-level declarations —
+// see `directive_statement`'s own comment for the M6e history: the corpus at
+// that time had zero member-level occurrences, so this was deliberately
+// deferred). A real owner project (`ph-cdm`) has member-level `#deprecated`
+// directives inside `model` bodies; without this alternative, hitting one mid-body
+// breaks `model_property`'s own attempt (no alternative starts with DIRECTIVE),
+// falls through to `bad_model_member_token_` one token at a time, and never
+// resynchronizes before the model's own closing `'}'` — which then surfaces as
+// a SECOND, unrelated parse error at the brace, and (because the enclosing
+// `namespace_statement` is often the file's own blockless, `';'`-bodied form,
+// whose body is `top_level_item_*` with no closing brace of its own to recover
+// at) silently drops every declaration textually after the broken model for the
+// rest of the file — the exact shape that broke `using`/spread/property
+// resolution into `standards.tsp` in the owner's real repro. Placed first: the
+// DIRECTIVE token uniquely selects this alternative, no ambiguity with
+// `model_property`/`model_spread`'s own leading tokens.
+private model_member_ ::= directive_statement | model_property | model_spread | bad_model_member_token_
 
 // Plan 04 M6b row 5 / ADR 0007 D6 follow-on: the reported defect-1 repro
 // (`@@package(A.B, { name: "x" })`, `@dec({title: "x"})`) is a `model_expression`
@@ -536,13 +554,20 @@ dec_fn_parameter ::= '...'? identifier '?'? (':' type_expression_)?
 // M6e Risks note ("If it stalls, split it out rather than blocking rows
 // 8–10"), this ships as an independent top-level statement (structurally
 // equivalent for parsing purposes: it still consumes the directive ahead of
-// the declaration it annotates, just as a sibling node rather than a child)
-// and member-level directive placement is NOT implemented — no corpus file
-// needs it. `directive_argument_`'s `identifier` alternative cannot
-// over-consume into the next real construct: every top-level-starting keyword
-// is lexed as KEYWORD/DECORATOR/AUGMENT_DECORATOR, never IDENTIFIER
-// (`_TypeSpecLexer.flex`'s keyword list precedes its identifier rule), so
-// there is no plain-IDENTIFIER top-level construct for it to collide with.
+// the declaration it annotates, just as a sibling node rather than a child).
+// `directive_argument_`'s `identifier` alternative cannot over-consume into
+// the next real construct: every top-level-starting keyword is lexed as
+// KEYWORD/DECORATOR/AUGMENT_DECORATOR, never IDENTIFIER (`_TypeSpecLexer.flex`'s
+// keyword list precedes its identifier rule), so there is no plain-IDENTIFIER
+// top-level construct for it to collide with.
+//
+// Update (owner bug fix): member-level directive placement (inside a `model`
+// body) IS now implemented — see `model_member_`'s own comment — because a
+// real owner project has member-level `#deprecated` directives and the
+// original "no corpus file needs it" premise no longer holds. `enum`/`union`/
+// `interface` member positions are unchanged (still not implemented — no
+// confirmed repro needs them; extending this rule's reuse to those bodies is
+// future work, not bundled into this fix).
 directive_statement ::= DIRECTIVE directive_argument_* {
   pin=1
 }
