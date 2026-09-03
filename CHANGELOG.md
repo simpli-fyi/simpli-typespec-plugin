@@ -6,6 +6,40 @@
 
 ### Added
 
+- M6.5c: the resolver's project-wide tier now queries the stub index instead of the word-index
+  file-cap prefilter. `TypeSpecSearchScopes.filesContainingWord` and `TIER_C_FILE_CAP` are
+  deleted outright — no fallback. `TypeSpecResolver`'s core is now name-list based
+  (`resolvePath(names, index, context)`, absorbing plan 05 M5.6c); `resolveSegment` is a thin PSI
+  adapter over it, and a new public `multiResolve(names, index, context)` is available for a
+  future name-based caller. This fixes the reported bug: a module with `using Shared;` and no
+  `import` of the module that declares `namespace Shared;` now resolves both a bare reference
+  (`VolumeUnit`) and a qualified one (`Shared.VolumeUnit`), regardless of project size — pinned by
+  a 130-plus-file fixture. `node_modules` stays invisible to this tier by construction (ADR 0011
+  D4) — verified separately. See `docs/adr/0011-stub-index-replaces-tier-c.md` and
+  `docs/plans/06-stub-index.md` §M6.5c.
+
+- M6.5b: a project-wide stub index, `TypeSpecDeclarationNameIndex` (`StubIndexKey`
+  `tsp.decl.name`), answers "which declarations are named X" without parsing any candidate file.
+  Keyed by the stub's already backtick-stripped simple name; the namespace-qualified question is
+  answered by a per-hit comparison against `TypeSpecDeclStub.namespacePath`
+  (`TypeSpecStubQueries.declarationsNamed`), never a second index. A `namespace` statement is
+  indexed once per dotted segment (`namespace A.B.C;` → findable by `A`, `B` and `C`), mirroring
+  `TypeSpecFileDeclarations`'s existing PSI-only rule so the two can never disagree. See
+  `docs/adr/0011-stub-index-replaces-tier-c.md` and `docs/plans/06-stub-index.md` §M6.5b.
+
+- M6.5a: TypeSpec declarations now build a stub tree (no behaviour change yet — the name index
+  and resolver switch-over are M6.5b/c). The 10 rules that can be a direct child of a file or a
+  `namespace` (`namespace`/`model`/`op`/`interface`/`enum`/`union`/`alias`/`scalar`/`dec`/`fn`)
+  carry `stubClass=` in `TypeSpec.bnf` and route their element type through a new
+  `TypeSpecStubTypes` holder (`<stubElementTypeHolder externalIdPrefix="tsp."/>`). Each stub
+  stores only a backtick-stripped name and a pre-computed dotted enclosing-namespace path,
+  computed from the parent stub chain, never from PSI; a `namespace` stub additionally stores its
+  own dotted segments. `node_modules` files are excluded from the persistent stub index at build
+  time (`TypeSpecFileElementType.shouldBuildStubFor`, backed by a new shared
+  `TypeSpecNodeModules` predicate) — reachable ad hoc via `PsiFile.getStub()` when explicitly
+  opened (e.g. along an import edge), but never indexed for project-wide search. See
+  `docs/adr/0011-stub-index-replaces-tier-c.md` and `docs/plans/06-stub-index.md` §M6.5a.
+
 - M5.6g': the standard library is now genuinely reachable, not just imported. Two gaps
   remained after M5.6g, both closed by matching upstream compiler behaviour verified against
   `@typespec/compiler`'s own sources: `lib/intrinsics.tsp` (where `string`, `int32`, `boolean`,

@@ -55,5 +55,20 @@
         <lang.findUsagesProvider
                 language="TypeSpec"
                 implementationClass="simpli.fyi.plugins.typespec.findusages.TypeSpecFindUsagesProvider"/>
+        <!-- M6.5a (plan 06, ADR 0011): stub infrastructure, zero behaviour change yet (no
+             <stubIndex> until M6.5b). Core EP, same provenance as lang.parserDefinition (ADR
+             0004 F1) — verified against META-INF/IdeaPlugin.xml:3168 and META-INF/Core.xml:46 of
+             ideaIC-2025.2.6.3. No new <depends>. Changing externalIdPrefix here is an ADR 0011
+             D6 item-3 stub-version bump. -->
+        <stubElementTypeHolder
+                class="simpli.fyi.plugins.typespec.stubs.TypeSpecStubTypes"
+                externalIdPrefix="tsp."/>
+        <!-- M6.5b (plan 06, ADR 0011 D3): the name index — "which declarations are named X",
+             keyed by simple name, filtered by the stub's own namespacePath field at query time
+             (TypeSpecStubQueries). Core EP, same provenance as stubElementTypeHolder above —
+             verified against META-INF/IdeaPlugin.xml:3460 and META-INF/Indexing.xml:10 of
+             ideaIC-2025.2.6.3. No new <depends>. -->
+        <stubIndex
+                implementation="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclarationNameIndex"/>
     </extensions>
 </idea-plugin>

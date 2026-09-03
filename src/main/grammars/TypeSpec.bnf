@@ -35,6 +35,15 @@
   // instances the hand-written JFlex lexer already emits, instead of minting new ones.
   tokenTypeFactory="simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.fromNameOrText"
 
+  // M6.5a (plan 06, ADR 0011 D5): the 10 rules that carry `stubClass=` below (exactly
+  // TypeSpecFileDeclarations.build()'s walk set) route their element-type constant through
+  // TypeSpecStubTypes.factory instead of `new TypeSpecElementType(...)`, so
+  // TypeSpecTypes.MODEL_STATEMENT etc. become the SAME IStubElementType singleton the stub
+  // holder interface declares (never a fresh instance — see TypeSpecStubTypes' own KDoc for
+  // why identity here is load-bearing). Every other rule is unaffected: it keeps minting a
+  // plain TypeSpecElementType exactly as before.
+  elementTypeFactory("(namespace|model|op|interface|enum|union|alias|scalar|dec|fn)_statement")="simpli.fyi.plugins.typespec.stubs.TypeSpecStubTypes.factory"
+
   generateTokenAccessors=true
 
   // Only the two "external" tokens this milestone's rules need by name: STRING
@@ -169,6 +178,7 @@ using_statement ::= 'using' qualified_name ';' {
 namespace_statement ::= decorator_application* 'namespace' qualified_name (namespace_block_ | (';' top_level_item_*)) {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
@@ -200,6 +210,7 @@ model_statement ::= decorator_application* modifier_* 'model' identifier templat
     ( (is_clause (';' | model_body)) | (extends_clause? model_body) ) {
   pin=3
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
@@ -468,6 +479,7 @@ array_literal ::= '#[' (value_expression (',' value_expression)* trailing_comma_
 dec_statement ::= decorator_application* modifier_* 'dec' identifier dec_fn_parameter_list ';' {
   pin=3
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
@@ -478,6 +490,7 @@ dec_statement ::= decorator_application* modifier_* 'dec' identifier dec_fn_para
 fn_statement ::= decorator_application* modifier_* 'fn' identifier dec_fn_parameter_list (':' type_expression_)? ';' {
   pin=3
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
@@ -694,6 +707,7 @@ op_statement ::= decorator_application* 'op' identifier template_parameter_list?
     ( (is_clause ';') | (operation_parameter_list ':' type_expression_ ';') ) {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
@@ -751,6 +765,7 @@ private operation_named_parameter_ ::= decorator_application* identifier '?'? ':
 interface_statement ::= decorator_application* 'interface' identifier template_parameter_list? interface_heritage_? interface_body {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
@@ -791,6 +806,7 @@ interface_operation ::= decorator_application* 'op'? identifier operation_parame
 enum_statement ::= decorator_application* 'enum' identifier enum_body {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
@@ -829,6 +845,7 @@ enum_member ::= decorator_application* identifier (':' value_expression)? member
 union_statement ::= decorator_application* 'union' identifier union_body {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
@@ -866,6 +883,7 @@ union_variant ::= decorator_application* identifier ':' type_expression_ member_
 alias_statement ::= decorator_application* 'alias' identifier template_parameter_list? '=' type_expression_ ';' {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 
@@ -880,6 +898,7 @@ scalar_statement ::= decorator_application* 'scalar' identifier template_paramet
     (';' | scalar_body) {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
 }
 

@@ -1,6 +1,7 @@
 package simpli.fyi.plugins.typespec.resolve
 
 import com.intellij.openapi.progress.ProgressManager
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementResolveResult
 import com.intellij.psi.ResolveResult
 import simpli.fyi.plugins.typespec.psi.TypeSpecFile
@@ -9,21 +10,29 @@ import simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement
 import simpli.fyi.plugins.typespec.psi.TypeSpecNamespaceStatement
 import simpli.fyi.plugins.typespec.psi.TypeSpecPsiUtil
 import simpli.fyi.plugins.typespec.psi.TypeSpecQualifiedName
+import simpli.fyi.plugins.typespec.stubs.TypeSpecStubQueries
 
 /**
  * The entry point and the only place the tier logic lives
  * ([ADR 0004](../../../../../../../../docs/adr/0004-reference-resolution-approach.md),
- * [plan 02](../../../../../../../../docs/plans/02-navigation.md)).
+ * [ADR 0011](../../../../../../../../docs/adr/0011-stub-index-replaces-tier-c.md),
+ * [plan 02](../../../../../../../../docs/plans/02-navigation.md),
+ * [plan 06](../../../../../../../../docs/plans/06-stub-index.md) M6.5c).
  *
  * Implements all three tiers: A (current file, lexically scoped), B (transitive `import`
- * closure — [TypeSpecImportGraph.transitiveClosure]) and C (project-wide word-index prefilter
- * — [TypeSpecSearchScopes.filesContainingWord]), tried in that order, stopping at the first
- * that yields a hit. Tier C only ever widens the **leading** segment of a
- * [TypeSpecQualifiedName] (index 0) — the case it exists for is a bare or namespace-relative
- * name resolving into a merged namespace the current file neither contains nor imports (ADR
- * 0004 F4, plan 02 case 15). Later segments (`Foo.<caret>Bar`) already require `Foo` to have
- * resolved to a namespace via tiers A–C on segment 0, so they inherit tier C's effect through
- * the recursive resolve of the previous segment without needing their own widening pass.
+ * closure — [TypeSpecImportGraph.transitiveClosure]) and C′ (project-wide **stub index**
+ * lookup — [TypeSpecStubQueries.declarationsNamed], zero candidate-file parses), tried in that
+ * order, stopping at the first that yields a hit. Tier C′ only ever widens the **leading**
+ * segment of a [TypeSpecQualifiedName] (index 0) — the case it exists for is a bare or
+ * namespace-relative name resolving into a merged namespace the current file neither contains
+ * nor imports (ADR 0004 F4, plan 02 case 15). Non-leading segments (`Foo.<caret>Bar`) get their
+ * own, narrower index fallback — see [resolvePath] — because `Foo` having already resolved to a
+ * namespace does not by itself guarantee `Bar` lives in a file tiers A/B reach.
+ *
+ * The name-based core is [resolvePath] (absorbs plan 05 M5.6c): everything below it works on
+ * already-stripped name lists and a resolution [PsiElement] context, never on
+ * [TypeSpecQualifiedName]/[TypeSpecIdentifier] PSI shape directly. [resolveSegment] is the thin
+ * PSI-shaped adapter that the reference contributor ([TypeSpecReference]) still calls.
  */
 object TypeSpecResolver {
 
@@ -76,10 +85,17 @@ object TypeSpecResolver {
         return true
     }
 
-    fun multiResolve(identifier: TypeSpecIdentifier): Array<ResolveResult> {
-        val matches = resolveSegment(identifier).map { it.second }
-        return PsiElementResolveResult.createResults(matches)
-    }
+    fun multiResolve(identifier: TypeSpecIdentifier): Array<ResolveResult> =
+        PsiElementResolveResult.createResults(resolveSegment(identifier).map { it.second })
+
+    /**
+     * The name-based public entry point ([resolvePath]) — absorbs plan 05 M5.6c, kept public for
+     * a caller that already has a stripped name list and a resolution context rather than a
+     * [TypeSpecQualifiedName] segment (plan 05 M5.6d, decorator references, is the first such
+     * caller — not implemented here).
+     */
+    fun multiResolve(names: List<String>, index: Int, context: PsiElement): Array<ResolveResult> =
+        PsiElementResolveResult.createResults(resolvePath(names, index, context).map { it.second })
 
     /**
      * Resolves [identifier] together with the [NamespacePath] it denotes, recursing on the
@@ -94,54 +110,67 @@ object TypeSpecResolver {
      * dotted-sugar or block-nested alike.
      */
     private fun resolveSegment(identifier: TypeSpecIdentifier): List<Pair<NamespacePath, TypeSpecNamedElement>> {
-        ProgressManager.checkCanceled()
-        val name = TypeSpecPsiUtil.stripBackticks(identifier.text) ?: return emptyList()
         val qualifiedName = identifier.parent as? TypeSpecQualifiedName ?: return emptyList()
         val segments = qualifiedName.identifierList
         val index = segments.indexOf(identifier)
         if (index < 0) return emptyList()
+        val names = segments.map { TypeSpecPsiUtil.stripBackticks(it.text) ?: it.text }
+        return resolvePath(names, index, identifier)
+    }
 
-        val file = identifier.containingFile as? TypeSpecFile ?: return emptyList()
+    /**
+     * The name-based resolver core (plan 06 M6.5c, absorbing plan 05 M5.6c). [names] are already
+     * backtick-stripped; [index] is the segment being resolved; [context] is any [PsiElement]
+     * inside the file the names are being resolved from — used for
+     * [TypeSpecImportGraph.transitiveClosure] and [TypeSpecScope.chainFor], both already
+     * PSI-position-based rather than identifier-based.
+     */
+    private fun resolvePath(names: List<String>, index: Int, context: PsiElement): List<Pair<NamespacePath, TypeSpecNamedElement>> {
+        ProgressManager.checkCanceled()
+        if (index !in names.indices) return emptyList()
+
+        val file = context.containingFile as? TypeSpecFile ?: return emptyList()
         val candidateFiles = TypeSpecImportGraph.transitiveClosure(file)
+        val name = names[index]
 
         return if (index == 0) {
-            resolveLeadingSegment(identifier, name, candidateFiles)
+            resolveLeadingSegment(context, name, candidateFiles)
         } else {
-            val previousPaths = resolveSegment(segments[index - 1]).map { it.first }.distinct()
+            val previousPaths = resolvePath(names, index - 1, context).map { it.first }.distinct()
             previousPaths.flatMap { previousPath ->
                 val path = NamespacePath(previousPath.segments + name)
-                candidateFiles
-                    .flatMap { f -> TypeSpecFileDeclarations.of(f).find(name, previousPath) }
-                    .map { path to it }
+                val direct = candidateFiles.flatMap { f -> TypeSpecFileDeclarations.of(f).find(name, previousPath) }
+                // Tier C' fallback (M6.5c): a `Shared.VolumeUnit`-shaped qualified reference
+                // whose namespace lives in a file tiers A/B never reach. Zero candidate-file
+                // parses — one stub-index lookup plus O(hits) string compares.
+                val results = direct.ifEmpty {
+                    TypeSpecStubQueries.declarationsNamed(context.project, name, previousPath)
+                }
+                results.map { path to it }
             }
         }
     }
 
     private fun resolveLeadingSegment(
-        identifier: TypeSpecIdentifier,
+        context: PsiElement,
         name: String,
         candidateFiles: Set<TypeSpecFile>,
     ): List<Pair<NamespacePath, TypeSpecNamedElement>> {
-        val direct = resolveLeadingSegmentIn(identifier, name, candidateFiles)
+        val direct = resolveLeadingSegmentIn(context, name, candidateFiles)
         if (direct.isNotEmpty()) return direct
 
-        // Tiers A/B (candidateFiles) yielded nothing — widen to tier C: every .tsp file in the
-        // project whose text contains [name] at all, word-index prefiltered (ADR 0004 D2).
-        // Returns null when the index is unavailable (dumb mode) or the candidate set exceeds
-        // TypeSpecSearchScopes.TIER_C_FILE_CAP — both mean "stop here, unresolved", not "parse
-        // a truncated subset".
-        val tierC = TypeSpecSearchScopes.filesContainingWord(identifier.project, name) ?: return emptyList()
-        val widened = candidateFiles + tierC
-        if (widened.size == candidateFiles.size) return emptyList() // nothing new to try
-        return resolveLeadingSegmentIn(identifier, name, widened)
+        // Tiers A/B (candidateFiles) yielded nothing — tier C' (M6.5c, ADR 0011): the stub
+        // index, per scope-chain entry and per `using` target visible at that scope. No file
+        // set, no cap, no CacheManager, no candidate-file parse.
+        return resolveLeadingSegmentViaIndex(context, name, candidateFiles)
     }
 
     private fun resolveLeadingSegmentIn(
-        identifier: TypeSpecIdentifier,
+        context: PsiElement,
         name: String,
         candidateFiles: Set<TypeSpecFile>,
     ): List<Pair<NamespacePath, TypeSpecNamedElement>> {
-        val chain = TypeSpecScope.chainFor(identifier)
+        val chain = TypeSpecScope.chainFor(context)
         for (scope in chain) {
             ProgressManager.checkCanceled()
 
@@ -159,6 +188,48 @@ object TypeSpecResolver {
                 val viaUsing = usingTargets.flatMap { target ->
                     val path = NamespacePath(target.segments + name)
                     candidateFiles.flatMap { f -> TypeSpecFileDeclarations.of(f).find(name, target) }.map { path to it }
+                }
+                if (viaUsing.isNotEmpty()) return viaUsing.distinctBy { it.second }
+            }
+        }
+        return emptyList()
+    }
+
+    /**
+     * Tier C′ (plan 06 M6.5c, ADR 0011): mirrors [resolveLeadingSegmentIn]'s shape exactly —
+     * same scope-chain order (longest prefix first), same "direct declaration at this scope,
+     * else its `using` targets" precedence — but every "does this name exist here" question is
+     * answered by [TypeSpecStubQueries.declarationsNamed] instead of walking [candidateFiles].
+     * `using` *targets themselves* are still resolved through [candidateFiles]' PSI
+     * ([TypeSpecScope.usingsVisibleIn]) because a `using` statement always lives in a file
+     * already in this file's tier A/B closure (the file being resolved from, at minimum) — only
+     * the declaration a `using` points *at* may live outside that closure, which is exactly what
+     * this tier widens.
+     */
+    private fun resolveLeadingSegmentViaIndex(
+        context: PsiElement,
+        name: String,
+        candidateFiles: Set<TypeSpecFile>,
+    ): List<Pair<NamespacePath, TypeSpecNamedElement>> {
+        val project = context.project
+        val chain = TypeSpecScope.chainFor(context)
+        for (scope in chain) {
+            ProgressManager.checkCanceled()
+
+            val direct = TypeSpecStubQueries.declarationsNamed(project, name, scope)
+            if (direct.isNotEmpty()) {
+                val path = NamespacePath(scope.segments + name)
+                return direct.distinct().map { path to it }
+            }
+
+            val usingTargets = (
+                candidateFiles.flatMap { TypeSpecScope.usingsVisibleIn(scope, it) } +
+                    ambientStdUsing(scope, candidateFiles)
+                ).distinct()
+            if (usingTargets.isNotEmpty()) {
+                val viaUsing = usingTargets.flatMap { target ->
+                    val path = NamespacePath(target.segments + name)
+                    TypeSpecStubQueries.declarationsNamed(project, name, target).map { path to it }
                 }
                 if (viaUsing.isNotEmpty()) return viaUsing.distinctBy { it.second }
             }
