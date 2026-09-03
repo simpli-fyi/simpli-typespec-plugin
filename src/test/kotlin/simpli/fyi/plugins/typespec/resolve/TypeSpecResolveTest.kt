@@ -313,17 +313,21 @@ class TypeSpecResolveTest : BasePlatformTestCase() {
     // ---- 15: cross-file, no import (tier C) ----------------------------------------------------
 
     /**
-     * Plan 02 case 15, explicitly deferred: M5.5a ships tiers A/B only (plan 02 risk 9,
-     * "M5.5a"/"M5.5b" split). `merged-a.tsp` and `merged-b.tsp` declare the SAME namespace and
-     * neither imports the other, so this is a pure tier-C case. Pinning `resolve() == null`
-     * here is deliberate — it documents the current (correct, plan-sanctioned) gap, not a
-     * defect. Update this test's expectation, not its fixture, when M5.5b ships tier C.
+     * Plan 02 case 15, now shipped in M5.5b: `merged-a.tsp` and `merged-b.tsp` declare the SAME
+     * namespace and neither imports the other, so tiers A/B (current file + transitive import
+     * closure) see nothing — this is a pure tier-C case (project-wide word-index prefilter,
+     * `TypeSpecSearchScopes.filesContainingWord`). ADR 0004 F4 calls this "the norm in real
+     * TypeSpec projects, not an edge case", since the compiler merges same-named namespaces
+     * declared across files that share a compilation but do not `import` each other directly
+     * (both are pulled in by a shared entry point instead). This replaces the M5.5a pin that
+     * documented tier C as not-yet-shipped.
      */
-    fun testCrossFileNoImportDoesNotResolveYetTierCNotShipped() {
+    fun testCrossFileNoImportResolvesViaTierCWordIndex() {
         myFixture.configureByFiles("resolve/merged-b.tsp", "resolve/merged-a.tsp")
-        val reference = myFixture.file.findReferenceAt(myFixture.caretOffset)
-        assertNotNull(reference)
-        assertNull(reference!!.resolve())
+        val target = myFixture.elementAtCaret
+        assertTrue(target is TypeSpecModelStatement)
+        assertEquals("Address", (target as TypeSpecNamedElement).name)
+        assertEquals("merged-a.tsp", target.containingFile.name)
     }
 
     // ---- 16: built-in type -------------------------------------------------------------------
