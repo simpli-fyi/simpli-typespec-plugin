@@ -1,10 +1,14 @@
 # ADR 0008 — Tier C's 50-file cap: an open UX question for the owner
 
-- **Status:** **OPEN — awaiting an owner decision.** The current behaviour is shipped and
-  correct; what is undecided is whether it is the behaviour we want to keep.
+- **Status:** **CLOSED — superseded by [ADR 0011](0011-stub-index-replaces-tier-c.md)**
+  (2026-09-03). The owner chose **option C**: build the stub index and delete tier C's word-index
+  path and its cap outright. Options A (raise the cap) and B (log the degradation) are declined —
+  B is not worth its own change once the mechanism it would report is being removed. The analysis
+  below stands as the record of *why*; do not treat any of it as describing current behaviour once
+  [plan 06](../plans/06-stub-index.md) M6.5c lands.
 - **Date:** 2026-09-03
-- **Decided by:** nobody yet. `tsp-architect` and `tsp-tester` concur on the analysis below
-  and explicitly decline to choose the outcome.
+- **Decided by:** the owner, 2026-09-03, in [ADR 0011](0011-stub-index-replaces-tier-c.md).
+  `tsp-architect` and `tsp-tester` wrote the analysis below and declined to choose the outcome.
 - **Amends:** [ADR 0004](0004-reference-resolution-approach.md) D2 (tier C degradation),
   and picks up [plan 02](../plans/02-navigation.md) §Risks/3, which predicted this exactly.
 - **Context:** shipped in M5.5b (`5fea9ef`), tested in `bfc0b9b`. Tree at plan-04 close:
@@ -106,7 +110,7 @@ But the sequencing question — is Go To Symbol + stub index worth pulling ahead
 structure view / folding / completion? — is a product-priority call, and that belongs to
 the owner.
 
-## Consequences of leaving it as-is
+## Consequences of leaving it as-is (historical — the owner did not)
 
 Acceptable in the short term. Navigation is correct when it answers and silent when it does
 not; nothing is *wrong*, and no user data or IDE stability is at risk. The cost is a

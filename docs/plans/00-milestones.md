@@ -54,8 +54,8 @@ Conventions used throughout:
 | M6e′ | Uncatalogued constructs | Call expressions in type position; a general trailing separator on every closed list kind. Unplanned; found by the corpus gate. ([plan 04](04-grammar-corrections.md) §M6e′) | ✅ `90b61db` |
 | M6f | Zero-baseline gate | `BASELINE.txt` deleted; the 83-file corpus test is now unconditional. | ✅ `b5ba371` |
 | M5.6 | Import + decorator navigation | Cmd-click on `import "…"` (relative **and** `@scope/pkg`) and on decorator names. Closes the owner's two live-session gaps; closes ADR 0004 open questions 1 and 2. ([plan 05](05-import-and-decorator-navigation.md), [ADR 0009](../adr/0009-decorator-reference-strategy.md), [ADR 0010](../adr/0010-library-import-resolution.md)) | planned |
-| M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. Annotator + completion build on M5.5's resolver. | **← NEXT** |
-| M6.5 | Rename, Go To Symbol, stub index | The write-side refactoring and the index that makes project-wide symbol search affordable. (ADR 0004 D6). The stub index is also option C of [ADR 0008](../adr/0008-tier-c-file-cap.md) — **pulling it ahead of M6 is an open owner decision.** | planned |
+| M6 | Structure view, folding, completion | The PSI-backed feature set from the prior-art checklist. Annotator + completion build on M5.5's resolver. | planned (after M6.5) |
+| M6.5 | Rename, Go To Symbol, stub index | The write-side refactoring and the index that makes project-wide symbol search affordable. (ADR 0004 D6). The stub index is option C of [ADR 0008](../adr/0008-tier-c-file-cap.md), **chosen by the owner** — see [ADR 0011](../adr/0011-stub-index-replaces-tier-c.md) and [plan 06](06-stub-index.md). It is now sequenced **ahead of M6**. | **← NEXT** |
 | M7 | Compatibility + release readiness | Verified across the whole supported IDE range; CI green; metadata complete. | planned |
 
 Detail plans: [01](01-lexer-and-highlighter.md) (M1–M3), [03](03-grammar-and-psi.md)

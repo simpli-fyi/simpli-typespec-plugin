@@ -148,7 +148,11 @@ Compatible with exactly two `<depends>` (this is the check on ADR 0010 D3's bund
 
 ---
 
-### M5.6c — Name-based core in the resolver
+### M5.6c — Name-based core in the resolver — **SUPERSEDED by [plan 06](06-stub-index.md) M6.5c**
+
+> Do not implement this separately. M6.5c rewrites `resolveLeadingSegment` for the stub index and
+> performs this extraction in the same edit ([ADR 0011](../adr/0011-stub-index-replaces-tier-c.md)).
+> The spec below stands as the description of *what* the extraction must produce.
 
 **Goal:** `TypeSpecResolver` can resolve a dotted name given as `List<String>` + a context element,
 not only as `TypeSpecIdentifier` PSI. No behaviour change.
@@ -301,4 +305,8 @@ State this to the owner up front; none of it is a defect.
   its own milestone after M5.6e.
 - **Bundling a JSON parser into the plugin jar** (ADR 0010 D3) — the alternative is a third
   `<depends>`, which `plugin.xml` says needs a new ADR. Architect's recommendation is the bundle.
-- **ADR 0008 remains open and untouched.** This plan neither needs nor blocks it.
+- ~~**ADR 0008 remains open and untouched.**~~ **Resolved:** the owner chose option C on
+  2026-09-03 — [ADR 0011](../adr/0011-stub-index-replaces-tier-c.md), [plan 06](06-stub-index.md).
+  The `node_modules` forward constraint this plan recorded is honoured there by ADR 0011 D4.
+- **Implicit `@typespec/compiler` import is now scheduled** as [plan 06](06-stub-index.md) M5.6g,
+  ahead of the stub index.
