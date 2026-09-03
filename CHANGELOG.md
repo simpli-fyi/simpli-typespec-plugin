@@ -138,6 +138,27 @@
   (`resolve/TypeSpecIdentifierManipulator.kt`) that deliberately throws — rename ships in
   M6.5 (ADR 0004 D6). No new `<depends>` (ADR 0004 F1).
 
+- M5.5b (plan 02, ADR 0004 D2/D6): tier C and Find Usages, completing M5.5's risk-9 split.
+  `resolve/TypeSpecSearchScopes.kt` widens the leading segment of a qualified name to every
+  `.tsp` file in the project whose text contains the candidate name, word-index prefiltered
+  (`CacheManager.getVirtualFilesWithWord`, `UsageSearchContext.ANY`), only once tiers A/B
+  (current file, transitive import closure) have yielded nothing; capped at
+  `TIER_C_FILE_CAP` (50) files and returns `null` (unresolved, not a truncated partial answer)
+  when the index is unavailable (dumb mode) or the cap is exceeded — `TypeSpecResolver`
+  degrades to "unresolved" in both cases rather than parsing on. This makes a reference in one
+  file resolve into a same-namespace declaration in another file with no explicit `import`
+  (ADR 0004 F4; plan 02 acceptance case 15) — the norm in real TypeSpec projects. New
+  `findusages/TypeSpecFindUsagesProvider.kt` (`lang.findUsagesProvider`) supplies a
+  `DefaultWordsScanner` (a fresh instance per call, per the platform's thread-safety
+  contract) and a `getType`/`getDescriptiveName`/`getNodeText` covering every declaration
+  kind (`model`/`enum`/`union`/`interface`/`alias`/`scalar`/`op`/`namespace`/model
+  property/template parameter); it needs no working `TypeSpecIdentifierManipulator` — Find
+  Usages runs entirely through `ReferencesSearch` and `PsiReference.isReferenceTo()`, never
+  through the manipulator, which stays a deliberate rename-is-M6.5 stub. Registering the
+  provider changes the `.tsp` word-index encoding (occurrences become categorised instead of
+  `ANY`), so the first IDE start after installing this build re-indexes `.tsp` files —
+  expected, not a regression. No new `<depends>` (ADR 0004 F1).
+
 ### Fixed
 
 - Grammar corrections from the ph-cdm corpus audit (plan 04 M6a/M6b; see

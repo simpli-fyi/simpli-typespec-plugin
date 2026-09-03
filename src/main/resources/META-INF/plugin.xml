@@ -48,5 +48,12 @@
         <lang.elementManipulator
                 forClass="simpli.fyi.plugins.typespec.psi.TypeSpecIdentifier"
                 implementationClass="simpli.fyi.plugins.typespec.resolve.TypeSpecIdentifierManipulator"/>
+        <!-- M5.5b (ADR 0004 D6, plan 02): Find Usages. Requires no working element manipulator
+             — see TypeSpecFindUsagesProvider's KDoc. Registering this bumps the .tsp word-index
+             version (occurrences become IN_CODE/IN_COMMENTS/IN_STRINGS instead of ANY), so the
+             first IDE start after installing this build re-indexes .tsp files — expected. -->
+        <lang.findUsagesProvider
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.findusages.TypeSpecFindUsagesProvider"/>
     </extensions>
 </idea-plugin>

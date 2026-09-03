@@ -15,10 +15,15 @@ import simpli.fyi.plugins.typespec.psi.TypeSpecQualifiedName
  * ([ADR 0004](../../../../../../../../docs/adr/0004-reference-resolution-approach.md),
  * [plan 02](../../../../../../../../docs/plans/02-navigation.md)).
  *
- * This milestone implements tiers A (current file, lexically scoped) and B (transitive `import`
- * closure) — [TypeSpecImportGraph.transitiveClosure]. Tier C (project-wide word-index
- * prefilter, `TypeSpecSearchScopes`) is **not** implemented; see the M5.5 report for why this is
- * a deliberate, plan-sanctioned split (plan 02 risk 9, "M5.5a").
+ * Implements all three tiers: A (current file, lexically scoped), B (transitive `import`
+ * closure — [TypeSpecImportGraph.transitiveClosure]) and C (project-wide word-index prefilter
+ * — [TypeSpecSearchScopes.filesContainingWord]), tried in that order, stopping at the first
+ * that yields a hit. Tier C only ever widens the **leading** segment of a
+ * [TypeSpecQualifiedName] (index 0) — the case it exists for is a bare or namespace-relative
+ * name resolving into a merged namespace the current file neither contains nor imports (ADR
+ * 0004 F4, plan 02 case 15). Later segments (`Foo.<caret>Bar`) already require `Foo` to have
+ * resolved to a namespace via tiers A–C on segment 0, so they inherit tier C's effect through
+ * the recursive resolve of the previous segment without needing their own widening pass.
  */
 object TypeSpecResolver {
 
@@ -82,6 +87,25 @@ object TypeSpecResolver {
     }
 
     private fun resolveLeadingSegment(
+        identifier: TypeSpecIdentifier,
+        name: String,
+        candidateFiles: Set<TypeSpecFile>,
+    ): List<Pair<NamespacePath, TypeSpecNamedElement>> {
+        val direct = resolveLeadingSegmentIn(identifier, name, candidateFiles)
+        if (direct.isNotEmpty()) return direct
+
+        // Tiers A/B (candidateFiles) yielded nothing — widen to tier C: every .tsp file in the
+        // project whose text contains [name] at all, word-index prefiltered (ADR 0004 D2).
+        // Returns null when the index is unavailable (dumb mode) or the candidate set exceeds
+        // TypeSpecSearchScopes.TIER_C_FILE_CAP — both mean "stop here, unresolved", not "parse
+        // a truncated subset".
+        val tierC = TypeSpecSearchScopes.filesContainingWord(identifier.project, name) ?: return emptyList()
+        val widened = candidateFiles + tierC
+        if (widened.size == candidateFiles.size) return emptyList() // nothing new to try
+        return resolveLeadingSegmentIn(identifier, name, widened)
+    }
+
+    private fun resolveLeadingSegmentIn(
         identifier: TypeSpecIdentifier,
         name: String,
         candidateFiles: Set<TypeSpecFile>,
