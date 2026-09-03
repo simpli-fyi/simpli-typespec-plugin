@@ -2,6 +2,8 @@ package simpli.fyi.plugins.typespec.resolve
 
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiPolyVariantReference
+import com.intellij.psi.util.CachedValueProvider
+import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.PsiTreeUtil
 import simpli.fyi.plugins.typespec.psi.TypeSpecFile
 import simpli.fyi.plugins.typespec.psi.TypeSpecNamespaceStatement
@@ -89,17 +91,38 @@ object TypeSpecScope {
     // StackOverflowError this guard's absence produced in M5.5 self-verification.
     private val resolvingUsings = ThreadLocal.withInitial { mutableSetOf<TypeSpecUsingStatement>() }
 
+    /**
+     * Perf fix (ADR 0008 investigation): [resolveUsingTarget]'s inner work — a full recursive
+     * resolve of the `using`'s own qualified name, including tier C — is cached per `using`
+     * PSI element, dependency [TypeSpecUsingStatement.getContainingFile], the same tradeoff
+     * [TypeSpecFileDeclarations] already makes (ADR 0004 D2): editing the file the `using`
+     * lives in invalidates its cache; editing any other file does not.
+     *
+     * Without this cache, [usingsVisibleIn] re-resolves the SAME `using` statement's target from
+     * scratch every time it is reached — and it is reached once per (scope in the chain) ×
+     * (candidate file), for every reference whose resolution needs a `using` fallback. Because
+     * each of those re-resolutions can itself require walking `usingsVisibleIn` again for a
+     * *different* `using` statement, real projects with more than a handful of `using`
+     * statements spread across the tier C candidate set exhibit combinatorial blow-up: measured
+     * against a real owner project (`ph-cdm`), a single Cmd-click resolve that reaches this path
+     * pinned one CPU core for minutes without returning, confirmed via a thread dump showing
+     * `usingsVisibleIn` → `resolveUsingTarget` → `TypeSpecReference.multiResolve` →
+     * `resolveLeadingSegmentIn` → `usingsVisibleIn` recursing dozens of frames deep. Memoizing
+     * one `using` statement's target once collapses that blow-up: each `using` statement in the
+     * project is resolved at most once per cache generation, however many times it is reached.
+     */
     private fun resolveUsingTarget(using: TypeSpecUsingStatement): NamespacePath? {
         val inProgress = resolvingUsings.get()
         if (!inProgress.add(using)) return null
         try {
-            val lastSegment = using.qualifiedName?.identifierList?.lastOrNull() ?: return null
-            val target = (lastSegment.reference as? PsiPolyVariantReference)
-                ?.multiResolve(false)
-                ?.mapNotNull { it.element as? TypeSpecNamespaceStatement }
-                ?.firstOrNull()
-                ?: return null
-            return fullPathOf(target)
+            return CachedValuesManager.getCachedValue(using) {
+                val lastSegment = using.qualifiedName?.identifierList?.lastOrNull()
+                val target = (lastSegment?.reference as? PsiPolyVariantReference)
+                    ?.multiResolve(false)
+                    ?.mapNotNull { it.element as? TypeSpecNamespaceStatement }
+                    ?.firstOrNull()
+                CachedValueProvider.Result.create(target?.let { fullPathOf(it) }, using.containingFile)
+            }
         } finally {
             inProgress.remove(using)
         }

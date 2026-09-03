@@ -325,4 +325,38 @@
       `BASELINE.txt` set as newly-passing and zero undeclared regressions —
       `corpus/real/**` remained at 0 entries throughout. `BASELINE.txt` itself is untouched
       here (`tsp-tester`'s file, per plan 04 M6f).
+  - **Cmd-click hang (owner-reported, ADR 0008 perf investigation).** Measured against a real
+    owner project (`ph-cdm`, 83 `.tsp` files, 60 under `node_modules`, mirrored read-only into
+    a test fixture — the owner's tree itself was never modified): resolving an identifier that
+    can only be found through a `using` binding (the normal case for any name the `using`
+    exists to bring into scope, not a corner case) recurses through
+    `TypeSpecScope.usingsVisibleIn` → `resolveUsingTarget` → a full nested
+    `TypeSpecReference.multiResolve` for every `using` statement visible at every scope level,
+    for every tier C candidate file — with no memoization across separate calls that reach the
+    *same* `using` statement by different paths. Against the real corpus this pinned one CPU
+    core, confirmed via thread dump (`AWT-EventQueue-0`, `RUNNABLE`, tens of stacked
+    `usingsVisibleIn`/`resolveUsingTarget` frames) still recursing after 15+ minutes — exactly
+    the platform's "Resolving reference..." hang the owner reported, and squarely inside a
+    read action, on what should be the EDT dispatch path. Fixed by caching
+    `resolveUsingTarget`'s result per `using` PSI element (`CachedValuesManager`, dependency on
+    the `using` statement's containing file — the same tradeoff `TypeSpecFileDeclarations`
+    already makes, ADR 0004 D2): each `using` statement's target is now resolved at most once
+    per cache generation, however many scopes/candidate files reach it, collapsing the
+    combinatorial blow-up. The existing per-thread re-entrancy guard is unchanged and still
+    guards the genuine self-referential case.
+  - **`node_modules` unintentionally in tier C's search scope (ADR 0008 perf investigation).**
+    `TypeSpecSearchScopes.tspScope` used `GlobalSearchScope.projectScope`, which includes
+    `node_modules` unconditionally — nothing in a CE-only project without the Node/JS plugin
+    marks it excluded. Measured against `ph-cdm`: one npm package's own bundled test fixtures
+    (`@typespec/protobuf/test/scenarios/**/input/main.tsp`, 36 files) alone pushed the
+    word-index hit count for `Protobuf` — the identifier in `using TypeSpec.Protobuf;`,
+    present in nearly every one of that project's own source files — past
+    `TIER_C_FILE_CAP` (50), the exact tension recorded in
+    `docs/adr/0008-tier-c-file-cap.md`: too many files for performance, too few for the
+    owner's own correctness, from the same cause. `tspScope` now excludes any file under a
+    `node_modules` directory (matched by path segment, no `NodeJS` plugin dependency needed).
+    This does not regress a working feature — resolving *into* a library's own declarations by
+    accidentally landing in `node_modules` was never a deliberate capability of this milestone
+    (ADR 0004 open question 2 remains open and unimplemented); it was an expensive, cap-eating
+    side effect of scope that was never meant to be searched.
 
