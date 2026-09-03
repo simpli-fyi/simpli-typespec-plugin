@@ -2,6 +2,7 @@ package simpli.fyi.plugins.typespec.resolve
 
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiManager
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.PsiModificationTracker
@@ -27,6 +28,12 @@ import simpli.fyi.plugins.typespec.psi.TypeSpecImportStatement
  * `@typespec/compiler` is not installed (no `node_modules`, or no such package), the resolver
  * returns `null` and nothing is seeded — silent, no error (ADR 0010 D5).
  *
+ * It also always includes `lib/intrinsics.tsp` from the same package (plan 06 M5.6g' gap 2) —
+ * `string`/`int32`/`boolean`/`float`/... live there, not in `lib/std/main.tsp`'s own import
+ * closure, and the real compiler loads it out-of-band via its own package root, not through
+ * `lib/std/main.tsp` or any `exports` entry. See [INTRINSICS_RELATIVE_PATH]'s doc for the exact
+ * upstream citation. Same silent-degrade contract as the std-library edge.
+ *
  * Cached per file with a dependency on [PsiModificationTracker.MODIFICATION_COUNT] —
  * deliberately asymmetric with [TypeSpecFileDeclarations]'s per-file dependency: the import
  * graph is small, changes rarely, and correctness on file rename/creation matters more than
@@ -38,6 +45,18 @@ object TypeSpecImportGraph {
 
     /** The bare specifier the TypeSpec compiler implicitly loads for every file. */
     private const val STD_LIBRARY_SPECIFIER = "@typespec/compiler"
+
+    /**
+     * `string`/`int32`/`boolean`/`float`/... live here, not in `lib/std/main.tsp`'s import
+     * closure. The real compiler loads this file out-of-band, addressed relative to its own
+     * package root (`host.getExecutionRoot()`) — never through `package.json`'s `exports` map,
+     * which has no entry for it at all (verified against `program.js`'s `loadIntrinsicTypes` and
+     * `node-host.js`'s `getExecutionRoot` in `@typespec/compiler`). Because there genuinely is no
+     * package-exposed entry point to resolve this through, this one relative path is hardcoded,
+     * isolated to this single named constant, exactly as `TypeSpecImportResolver.entryPointOf`'s
+     * doc comment does for its own "verified, not guessed" upstream paths.
+     */
+    private const val INTRINSICS_RELATIVE_PATH = "lib/intrinsics.tsp"
 
     /**
      * The transitive closure of [file]'s `import` statements plus the implicit std-library edge,
@@ -65,6 +84,23 @@ object TypeSpecImportGraph {
         if (stdLibrary != null && stdLibraryFile != null && visited.add(stdLibraryFile)) {
             result.add(stdLibrary)
             queue.add(stdLibrary)
+        }
+
+        // Implicit intrinsics edge (plan 06 M5.6g' gap 2) — resolved through the package root
+        // TypeSpecImportResolver.resolvePackageDir already locates for @typespec/compiler, not a
+        // hardcoded absolute or project-relative path. Absent/unresolvable degrades to seeding
+        // nothing, same as the std-library edge above.
+        val stdLibraryPackageDir = TypeSpecImportResolver.resolvePackageDir(file, STD_LIBRARY_SPECIFIER)
+        val intrinsicsVirtualFile = stdLibraryPackageDir
+            ?.findFileByRelativePath(INTRINSICS_RELATIVE_PATH)
+            ?.canonicalFile
+            ?.takeIf { !it.isDirectory && it.extension == "tsp" }
+        if (intrinsicsVirtualFile != null && visited.add(intrinsicsVirtualFile)) {
+            val intrinsicsFile = PsiManager.getInstance(file.project).findFile(intrinsicsVirtualFile) as? TypeSpecFile
+            if (intrinsicsFile != null) {
+                result.add(intrinsicsFile)
+                queue.add(intrinsicsFile)
+            }
         }
 
         while (queue.isNotEmpty() && result.size < CLOSURE_CAP) {

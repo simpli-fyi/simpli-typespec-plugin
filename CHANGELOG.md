@@ -6,6 +6,17 @@
 
 ### Added
 
+- M5.6g': the standard library is now genuinely reachable, not just imported. Two gaps
+  remained after M5.6g, both closed by matching upstream compiler behaviour verified against
+  `@typespec/compiler`'s own sources: `lib/intrinsics.tsp` (where `string`, `int32`, `boolean`,
+  `float` are declared) is seeded out-of-band, because it is absent from `lib/std/main.tsp`'s
+  import closure and from `package.json`'s `exports` map — the compiler loads it relative to its
+  own package root (`program.js` `loadIntrinsicTypes`); and every file now gets the implicit
+  ambient `using TypeSpec;` the compiler injects via `name-resolver.js` `addUsingSymbols`. The
+  ambient using is gated on the std library actually having loaded, applies only at file-root
+  scope, and is consulted only after direct declarations, so a local declaration of the same name
+  still wins. Absent `@typespec/compiler` degrades silently to the previous behaviour.
+
 - M0: project bootstrapped from the JetBrains IntelliJ Platform Plugin Template (v2.6.0),
   pinned to IntelliJ IDEA Community `2025.2.6.3` on JDK 21. See `docs/adr/0002-build-and-platform-baseline.md`.
 - M1: `.tsp` files are now recognised as TypeSpec — `TypeSpecLanguage`, `TypeSpecFileType`,

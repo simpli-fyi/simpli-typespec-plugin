@@ -79,25 +79,56 @@ object TypeSpecImportResolver {
      */
     private fun resolveBare(baseDir: VirtualFile, specifier: String): VirtualFile? {
         val (packageName, subPath) = splitBareSpecifier(specifier)
+        val packageDir = findPackageDir(baseDir, packageName) ?: return null
+        return if (subPath == null) {
+            entryPointOf(packageDir)
+        } else {
+            // ADR 0010 D2.3 — deliberate simplification: a trailing subpath is resolved
+            // relative to the package directory; real `exports` subpath maps are not
+            // implemented.
+            val sub = packageDir.findFileByRelativePath(subPath) ?: return null
+            if (sub.isDirectory) entryPointOf(sub) else sub
+        }
+    }
+
+    /**
+     * Walks **up** from [baseDir], checking `<dir>/node_modules/<packageName>` at each level,
+     * exactly like [resolveBare] does before deciding what to resolve *within* the package —
+     * factored out because [resolvePackageDir] needs the directory itself, not an entry point
+     * inside it (plan 06 M5.6g' gap 2: `lib/intrinsics.tsp` is addressed relative to the
+     * package root, not through any `exports` entry).
+     */
+    private fun findPackageDir(baseDir: VirtualFile, packageName: String): VirtualFile? {
         var dir: VirtualFile? = baseDir
         while (dir != null) {
             ProgressManager.checkCanceled()
             val nodeModules = dir.findChild("node_modules")
             val packageDir = nodeModules?.findFileByRelativePath(packageName)?.takeIf { it.isDirectory }
-            if (packageDir != null) {
-                return if (subPath == null) {
-                    entryPointOf(packageDir)
-                } else {
-                    // ADR 0010 D2.3 — deliberate simplification: a trailing subpath is resolved
-                    // relative to the package directory; real `exports` subpath maps are not
-                    // implemented.
-                    val sub = packageDir.findFileByRelativePath(subPath) ?: return null
-                    if (sub.isDirectory) entryPointOf(sub) else sub
-                }
-            }
+            if (packageDir != null) return packageDir
             dir = dir.parent
         }
         return null
+    }
+
+    /**
+     * Resolves [packageName]'s root directory as installed for [from] — the same node_modules
+     * walk-up [resolve] uses for a bare specifier, minus the entry-point step. Public because
+     * [TypeSpecImportGraph] needs the directory itself to locate `lib/intrinsics.tsp`, which the
+     * package's `exports` map does not expose (see `TypeSpecImportGraph.INTRINSICS_RELATIVE_PATH`).
+     * Cached per importing file, same shape and invalidation as [resolve].
+     */
+    fun resolvePackageDir(from: TypeSpecFile, packageName: String): VirtualFile? {
+        val cache: ConcurrentHashMap<String, Optional<VirtualFile>> =
+            CachedValuesManager.getCachedValue(from) {
+                CachedValueProvider.Result.create(
+                    ConcurrentHashMap<String, Optional<VirtualFile>>(),
+                    PsiModificationTracker.MODIFICATION_COUNT,
+                )
+            }
+        return cache.computeIfAbsent(packageName) {
+            val baseDir = from.virtualFile?.parent
+            Optional.ofNullable(baseDir?.let { findPackageDir(it, packageName) }?.canonicalFile)
+        }.orElse(null)
     }
 
     /** Splits `@scope/pkg/sub/path` into (`@scope/pkg`, `sub/path`) and `pkg/sub` into (`pkg`, `sub`). */

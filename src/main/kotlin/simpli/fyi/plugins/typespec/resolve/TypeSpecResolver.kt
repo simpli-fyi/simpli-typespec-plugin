@@ -28,6 +28,37 @@ import simpli.fyi.plugins.typespec.psi.TypeSpecQualifiedName
 object TypeSpecResolver {
 
     /**
+     * The implicit ambient `using TypeSpec;` every source file gets for free (plan 06 M5.6g' gap
+     * 1) — verified against `name-resolver.js`'s `resolveProgram`, which does, unconditionally
+     * for every `program.sourceFiles` entry once the std library is merged into the global
+     * namespace:
+     * ```
+     * const typespecNamespaceBinding = globalNamespaceSym.exports.get("TypeSpec");
+     * if (typespecNamespaceBinding) {
+     *     for (const file of program.sourceFiles.values()) {
+     *         addUsingSymbols(typespecNamespaceBinding.exports, file.locals);
+     *     }
+     * }
+     * ```
+     * Two things follow from that upstream shape, both implemented below:
+     *  - It is gated on `typespecNamespaceBinding` existing at all — i.e. on the std library
+     *    having actually loaded a `namespace TypeSpec` declaration into scope — never applied
+     *    unconditionally. Here that gate is "does any file already in [TypeSpecImportGraph]'s
+     *    closure (which always tries to seed the std library, M5.6g) declare a global-scope
+     *    `TypeSpec` namespace" — same effect, without re-deriving the package check.
+     *  - It targets `file.locals`, i.e. exactly the *file-root* scope — the same place an
+     *    explicit top-level `using TypeSpec;` would land, not every nested namespace. So it is
+     *    only offered as a using target for [NamespacePath]'s empty (global) segment, folded into
+     *    the existing per-scope using fallback in [resolveLeadingSegmentIn]. Because that fallback
+     *    already only runs *after* [resolveLeadingSegmentIn] finds no direct declaration at that
+     *    same scope, a local top-level declaration of the same name still wins — matching
+     *    upstream's own precedence (`resolveIdentifier`'s `globalBinding` — real global exports —
+     *    is checked, and returned on a hit, strictly before its `usingBinding` fallback, which is
+     *    where the injected `TypeSpec` symbols live).
+     */
+    private val AMBIENT_STD_USING = NamespacePath(listOf("TypeSpec"))
+
+    /**
      * `false` when [identifier] is not in a name position at all, or is one of the segments of
      * a `namespace` statement's own dotted name (plan 02 risk 4 — first cut: a namespace's own
      * name is a declaration on every segment, never a reference). Every other
@@ -120,9 +151,10 @@ object TypeSpecResolver {
                 return direct.distinct().map { path to it }
             }
 
-            val usingTargets = candidateFiles
-                .flatMap { TypeSpecScope.usingsVisibleIn(scope, it) }
-                .distinct()
+            val usingTargets = (
+                candidateFiles.flatMap { TypeSpecScope.usingsVisibleIn(scope, it) } +
+                    ambientStdUsing(scope, candidateFiles)
+                ).distinct()
             if (usingTargets.isNotEmpty()) {
                 val viaUsing = usingTargets.flatMap { target ->
                     val path = NamespacePath(target.segments + name)
@@ -132,5 +164,21 @@ object TypeSpecResolver {
             }
         }
         return emptyList()
+    }
+
+    /**
+     * [AMBIENT_STD_USING], but only at the file-root scope (empty [NamespacePath]) and only when
+     * a global-scope `namespace TypeSpec` declaration is actually reachable in [candidateFiles] —
+     * i.e. the std library resolved into the closure at all ([TypeSpecImportGraph] M5.6g). Absent
+     * that (no `@typespec/compiler` installed, or [TypeSpecImportGraph] couldn't reach it), this
+     * degrades to no ambient using, silently — same contract as the closure seed itself.
+     */
+    private fun ambientStdUsing(scope: NamespacePath, candidateFiles: Set<TypeSpecFile>): List<NamespacePath> {
+        if (scope.segments.isNotEmpty()) return emptyList()
+        val stdLibraryLoaded = candidateFiles.any { f ->
+            TypeSpecFileDeclarations.of(f).find("TypeSpec", NamespacePath(emptyList()))
+                .any { it is TypeSpecNamespaceStatement }
+        }
+        return if (stdLibraryLoaded) listOf(AMBIENT_STD_USING) else emptyList()
     }
 }
