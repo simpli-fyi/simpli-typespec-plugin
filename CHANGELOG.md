@@ -116,6 +116,28 @@
   `TypeSpecPsiContractTest` methods (own `ContractFixtureM5c.tsp`, M5b's `ContractFixture.tsp`
   untouched). All M5b goldens/tests unchanged.
 
+- M5.5 (plan 02, ADR 0004): Ctrl/Cmd-click and *Go To Declaration* on a qualified type
+  reference now jump to its `model`/`enum`/`union`/`interface`/`alias`/`scalar`/`op`/
+  `namespace` declaration. One `PsiReference` implementation
+  (`resolve/TypeSpecReference.kt`, `PsiPolyVariantReferenceBase`, always soft per ADR 0004
+  D3) hangs off every name-position `TypeSpecIdentifier` via a new
+  `TypeSpecIdentifierMixin.getReference()` (`identifier` rule gains `mixin=` in
+  `TypeSpec.bnf`; no tree-shape change). `resolve/TypeSpecResolver.kt` resolves the leading
+  segment of a qualified name lexically (`resolve/TypeSpecScope.kt`'s namespace-chain walk,
+  innermost enclosing namespace outward to global, `using` bindings resolved via the same
+  per-segment reference mechanism, longest-prefix-first) and later segments as members of
+  the previous segment's resolved namespace; `resolve/TypeSpecFileDeclarations.kt` is a
+  per-file `CachedValuesManager`-backed name table (cache-dependent on the file itself, not
+  `MODIFICATION_COUNT` — editing one file invalidates only that file's table, ADR 0004 D2);
+  `resolve/TypeSpecImportGraph.kt` follows relative (`./`, `../`) `import` targets
+  (including directory-with-`main.tsp`) to their transitive closure, cycle-safe, capped at
+  200 files. Scope: tiers A (current file) and B (transitive import closure) only — tier C
+  (project-wide word-index prefilter for the merged-namespace, no-explicit-import case) and
+  `FindUsagesProvider` are not implemented in this milestone; see the M5.5 report. Also
+  registers a `lang.elementManipulator` for `TypeSpecIdentifier`
+  (`resolve/TypeSpecIdentifierManipulator.kt`) that deliberately throws — rename ships in
+  M6.5 (ADR 0004 D6). No new `<depends>` (ADR 0004 F1).
+
 ### Fixed
 
 - Grammar corrections from the ph-cdm corpus audit (plan 04 M6a/M6b; see

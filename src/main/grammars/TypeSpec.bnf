@@ -296,8 +296,13 @@ model_property ::= decorator_application* identifier '?'? ':' type_expression_ (
 // two different `IElementType` fields cannot share one Java field name. The
 // generated PSI class name (`TypeSpecIdentifier`) is driven by the rule name,
 // not by this attribute, so ADR 0004 D7.1's naming is unaffected.
+// M5.5 (ADR 0004 D1, plan 02): mixin="" attaches TypeSpecIdentifierMixin.getReference(), the
+// single reference implementation every name-position identifier shares. Same "string
+// attribute, never loaded by the generator" technique as TypeSpecNamedElementMixin above (ADR
+// 0006 D7/F8) — no methods=[...]/psiImplUtilClass involved.
 identifier ::= IDENTIFIER {
   elementType="identifier_node"
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecIdentifierMixin"
 }
 
 // ADR 0004 D7.1: a dot-separated sequence of `identifier` nodes, used UNIFORMLY

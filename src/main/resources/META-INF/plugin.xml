@@ -42,5 +42,11 @@
         <spellchecker.support
                 language="TypeSpec"
                 implementationClass="simpli.fyi.plugins.typespec.spellchecker.TypeSpecSpellcheckingStrategy"/>
+        <!-- M5.5 (ADR 0004 D1/D6, plan 02): registered but deliberately throwing — see
+             TypeSpecIdentifierManipulator's KDoc. No <depends> needed (ADR 0004 F1): this EP is
+             declared in the core com.intellij descriptor, same as lang.parserDefinition. -->
+        <lang.elementManipulator
+                forClass="simpli.fyi.plugins.typespec.psi.TypeSpecIdentifier"
+                implementationClass="simpli.fyi.plugins.typespec.resolve.TypeSpecIdentifierManipulator"/>
     </extensions>
 </idea-plugin>
