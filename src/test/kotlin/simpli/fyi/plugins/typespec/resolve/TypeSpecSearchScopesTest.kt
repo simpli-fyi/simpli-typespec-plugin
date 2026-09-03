@@ -1,109 +1,22 @@
 package simpli.fyi.plugins.typespec.resolve
 
+import com.intellij.psi.stubs.StubTreeLoader
 import com.intellij.testFramework.DumbModeTestUtils
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import simpli.fyi.plugins.typespec.psi.TypeSpecModelStatement
 import simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement
+import simpli.fyi.plugins.typespec.stubs.TypeSpecStubQueries
 
 /**
- * Tier C's two behavioural cliffs ([ADR 0004](../../../../../../../../docs/adr/0004-reference-resolution-approach.md)
- * D2, [plan 02](../../../../../../../../docs/plans/02-navigation.md) §
- * `TypeSpecSearchScopesTest`). Both are deliberate EDT-safety tradeoffs: [filesContainingWord]
- * returns `null` — "stop, unresolved" — rather than parsing a truncated subset, either because
- * the word-index hit count exceeds [TypeSpecSearchScopes.TIER_C_FILE_CAP] or because
- * [com.intellij.openapi.project.DumbService] reports the project is indexing. Neither cliff is
- * currently pinned by a test; this class is that pin.
+ * `TypeSpecSearchScopes` (plan 06 M6.5c). The cap and dumb-mode-returns-null cases this class
+ * used to pin belonged to the deleted `filesContainingWord`/`TIER_C_FILE_CAP` word-index path
+ * (ADR 0011 D1: deleted outright, not kept behind a flag — there is nothing left to cap). What
+ * survives, unedited in spirit, is `tspScope`'s `node_modules` exclusion — now the stub-index
+ * query scope rather than tier C's word-index prefilter — extended with the stub-index-shaped
+ * replacements for the cap/dumb-mode invariants ([TypeSpecStubIndexTest] owns the bulk of that
+ * new coverage; the cases here are the ones anchored specifically to `tspScope`/`node_modules`).
  */
 class TypeSpecSearchScopesTest : BasePlatformTestCase() {
-
-    // ---- the 50-file cap ---------------------------------------------------------------------
-
-    /**
-     * More than [TypeSpecSearchScopes.TIER_C_FILE_CAP] `.tsp` files all contain the word
-     * `Widget`. Asserts (a) [TypeSpecSearchScopes.filesContainingWord] itself returns `null`
-     * once the cap is exceeded, and (b) the full resolver — the thing a Cmd-click actually
-     * calls — degrades to unresolved for a cross-file, no-import reference to `Widget`, rather
-     * than resolving to an arbitrary member of a truncated subset. This is the "never parse a
-     * truncated subset" claim in plan 02's `TypeSpecSearchScopesTest` section, verified against
-     * the real resolver rather than trusted from the KDoc.
-     */
-    fun testFileCapExceededReturnsNullAndResolverDegradesToUnresolved() {
-        val fileCount = TypeSpecSearchScopes.TIER_C_FILE_CAP + 5
-        repeat(fileCount) { i ->
-            myFixture.addFileToProject(
-                "cap-widget-$i.tsp",
-                """
-                namespace Ns$i {
-                  model Widget {}
-                }
-                """.trimIndent(),
-            )
-        }
-
-        val start = System.nanoTime()
-        val hits = TypeSpecSearchScopes.filesContainingWord(project, "Widget")
-        val elapsedMs = (System.nanoTime() - start) / 1_000_000
-        assertNull(
-            "filesContainingWord must return null once the word-index hit count exceeds " +
-                "TIER_C_FILE_CAP (${TypeSpecSearchScopes.TIER_C_FILE_CAP}), not a truncated list",
-            hits,
-        )
-        // A pure index lookup that bails on the cap before parsing anything should be fast,
-        // not proportional to fileCount full parses.
-        assertTrue("filesContainingWord took ${elapsedMs}ms, suspiciously slow for a capped index lookup", elapsedMs < 20_000)
-
-        // Now exercise the real resolver: a reference to `Widget` with no local declaration,
-        // no import, in a namespace that does not merge with any of the Ns$i namespaces above.
-        val referencingFile = myFixture.addFileToProject(
-            "cap-referencer.tsp",
-            """
-            namespace CapReferencer {
-              model User {
-                w: <caret>Widget;
-              }
-            }
-            """.trimIndent(),
-        )
-        myFixture.configureFromExistingVirtualFile(referencingFile.virtualFile)
-        val reference = myFixture.file.findReferenceAt(myFixture.caretOffset)
-        assertNotNull(reference)
-        assertNull(
-            "resolver must degrade to unresolved when tier C's cap fires, never resolve into " +
-                "an arbitrary member of a truncated candidate set",
-            reference!!.resolve(),
-        )
-    }
-
-    // ---- dumb mode -----------------------------------------------------------------------
-
-    /**
-     * During indexing, `CacheManager` must not be consulted at all — calling it in dumb mode
-     * throws `IndexNotReadyException`. Asserts [TypeSpecSearchScopes.filesContainingWord]
-     * returns `null` inside `runInDumbMode` and, crucially, that no exception escapes.
-     */
-    fun testDumbModeReturnsNullWithoutThrowing() {
-        myFixture.addFileToProject(
-            "dumb-widget.tsp",
-            """
-            namespace Ns {
-              model Widget {}
-            }
-            """.trimIndent(),
-        )
-
-        var result: List<simpli.fyi.plugins.typespec.psi.TypeSpecFile>? = listOf() // sentinel, overwritten below
-        var threw: Throwable? = null
-        DumbModeTestUtils.runInDumbModeSynchronously(project) {
-            try {
-                result = TypeSpecSearchScopes.filesContainingWord(project, "Widget")
-            } catch (t: Throwable) {
-                threw = t
-            }
-        }
-
-        assertNull("no exception (in particular no IndexNotReadyException) may escape dumb mode", threw)
-        assertNull("filesContainingWord must return null while DumbService.isDumb == true", result)
-    }
 
     // ---- node_modules exclusion (ADR 0008 perf investigation, `dbd7825`) ---------------------
 
@@ -113,9 +26,26 @@ class TypeSpecSearchScopesTest : BasePlatformTestCase() {
      * CE-only, non-Node-plugin project), which let a vendored package's own bundled test
      * fixtures eat tier C's file cap for a word that also appears throughout the owner's own
      * source (ADR 0008, `TypeSpecSearchScopes` KDoc). A `.tsp` file under a `node_modules` path
-     * segment must never be a tier C candidate; an otherwise-identical file outside one must.
+     * segment must never be a stub-index query candidate; an otherwise-identical file outside
+     * one must.
      */
-    fun testFilesContainingWordExcludesNodeModulesFileButIncludesSibling() {
+    fun testTspScopeContainsExcludesNodeModulesPathSegment() {
+        val nodeModulesFile = myFixture.addFileToProject(
+            "vendor/node_modules/@typespec/rest/lib.tsp",
+            "namespace Lib {}",
+        ).virtualFile
+        val ownedFile = myFixture.addFileToProject(
+            "src/lib.tsp",
+            "namespace Lib {}",
+        ).virtualFile
+
+        val scope = TypeSpecSearchScopes.tspScope(project)
+        assertFalse("node_modules file must be excluded from tspScope", scope.contains(nodeModulesFile))
+        assertTrue("a sibling file outside node_modules must be included in tspScope", scope.contains(ownedFile))
+    }
+
+    /** Same assertion, driven through the stub index rather than `tspScope.contains` directly. */
+    fun testDeclarationsNamedExcludesNodeModulesFileButIncludesSibling() {
         myFixture.addFileToProject(
             "vendor/node_modules/@typespec/protobuf/vendored.tsp",
             """
@@ -133,40 +63,84 @@ class TypeSpecSearchScopesTest : BasePlatformTestCase() {
             """.trimIndent(),
         )
 
-        val hits = TypeSpecSearchScopes.filesContainingWord(project, "VendorWidget")
-        assertNotNull(hits)
-        val hitNames = hits!!.map { it.name }.toSet()
+        val hits = TypeSpecStubQueries.declarationsNamed(project, "VendorWidget", null)
+        val hitFileNames = hits.map { it.containingFile.name }.toSet()
         assertEquals(
-            "expected only the file outside node_modules — actual candidates: $hitNames",
+            "expected only the file outside node_modules — actual candidates: $hitFileNames",
             setOf("owned.tsp"),
-            hitNames,
+            hitFileNames,
         )
     }
 
-    /** Same assertion, but directly against [TypeSpecSearchScopes.tspScope]'s `contains`. */
-    fun testTspScopeContainsExcludesNodeModulesPathSegment() {
+    /**
+     * Defence in depth verified directly: a `node_modules` file is not merely absent from a
+     * lookup's *results* — it is never eligible for a stub tree at all
+     * ([StubTreeLoader.canHaveStub], ADR 0011 D4). `stub == null` is deliberately not used here:
+     * `PsiFileImpl.getStub()` can return a non-null, unpersisted ad hoc tree even for a file
+     * excluded from indexing.
+     */
+    fun testNodeModulesFileCanNeverHaveAStub() {
         val nodeModulesFile = myFixture.addFileToProject(
-            "vendor/node_modules/@typespec/rest/lib.tsp",
-            "namespace Lib {}",
+            "vendor/node_modules/@typespec/protobuf/vendored.tsp",
+            "model VendorWidget {}",
         ).virtualFile
         val ownedFile = myFixture.addFileToProject(
-            "src/lib.tsp",
-            "namespace Lib {}",
+            "src/owned.tsp",
+            "model OwnedWidget {}",
         ).virtualFile
 
-        val scope = TypeSpecSearchScopes.tspScope(project)
-        assertFalse("node_modules file must be excluded from tspScope", scope.contains(nodeModulesFile))
-        assertTrue("a sibling file outside node_modules must be included in tspScope", scope.contains(ownedFile))
+        assertFalse(
+            "a node_modules file must never be eligible for a stub tree",
+            StubTreeLoader.getInstance().canHaveStub(nodeModulesFile),
+        )
+        assertTrue(
+            "a sibling file outside node_modules must remain eligible for a stub tree",
+            StubTreeLoader.getInstance().canHaveStub(ownedFile),
+        )
     }
 
     /**
-     * End-to-end: a tier C resolution into a merged namespace still succeeds when a
-     * `node_modules`-vendored decoy file declares the SAME namespace and member name. Confirms
-     * excluding `node_modules` did not break resolution within the owner's own corpus — the
-     * decoy must be invisible to the resolver, and the real owner-code target must still be
-     * found.
+     * Replaces the old `filesContainingWord`-returns-null-in-dumb-mode pin: the stub-index query
+     * (`DumbService.isDumb` guarded inside [TypeSpecStubQueries.declarationsNamed] itself) must
+     * degrade to an empty result during indexing, never throw `IndexNotReadyException`.
      */
-    fun testTierCResolutionIgnoresNodeModulesDecoyAndStillResolvesOwnerCode() {
+    fun testDeclarationsNamedReturnsEmptyWithoutThrowingInDumbMode() {
+        myFixture.addFileToProject(
+            "dumb-widget.tsp",
+            """
+            namespace Ns {
+              model Widget {}
+            }
+            """.trimIndent(),
+        )
+
+        var result: List<TypeSpecNamedElement>? = null
+        var threw: Throwable? = null
+        DumbModeTestUtils.runInDumbModeSynchronously(project) {
+            try {
+                result = TypeSpecStubQueries.declarationsNamed(project, "Widget", null)
+            } catch (t: Throwable) {
+                threw = t
+            }
+        }
+
+        assertNull("no exception (in particular no IndexNotReadyException) may escape dumb mode", threw)
+        assertEquals(
+            "declarationsNamed must return an empty list while DumbService.isDumb == true",
+            emptyList<TypeSpecNamedElement>(),
+            result,
+        )
+    }
+
+    /**
+     * End-to-end: resolution into a merged namespace still succeeds when a `node_modules`-vendored
+     * decoy file declares the SAME namespace and member name. Confirms excluding `node_modules`
+     * did not break resolution within the owner's own corpus — the decoy must be invisible to the
+     * resolver, and the real owner-code target must still be found. Unedited from the tier-C-era
+     * suite: it drives the actual `PsiReference`, so it is agnostic to which tier answers under
+     * the hood.
+     */
+    fun testResolutionIgnoresNodeModulesDecoyAndStillResolvesOwnerCode() {
         myFixture.addFileToProject(
             "vendor/node_modules/decoy-pkg/decoy.tsp",
             """

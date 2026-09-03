@@ -1,8 +1,10 @@
 package simpli.fyi.plugins.typespec.resolve
 
 import com.intellij.psi.PsiReferenceBase
+import com.intellij.psi.stubs.StubTreeLoader
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import simpli.fyi.plugins.typespec.psi.TypeSpecFile
+import simpli.fyi.plugins.typespec.stubs.TypeSpecStubQueries
 
 /**
  * `TypeSpecImportReference`/`TypeSpecImportStatementMixin` — M5.6b
@@ -156,11 +158,14 @@ class TypeSpecImportReferenceTest : BasePlatformTestCase() {
     /**
      * ADR 0010 D1, exercised end-to-end through the actual `PsiReference` a Cmd-click uses (not
      * just the resolver directly, see [TypeSpecImportResolverTest]): the exact node_modules file
-     * `lib-consumer.tsp`'s import resolves to must still be invisible to
-     * [TypeSpecSearchScopes.filesContainingWord]/[TypeSpecSearchScopes.tspScope]. The two
-     * mechanisms coexist over the *same* file.
+     * `lib-consumer.tsp`'s import resolves to must still be invisible to the stub index /
+     * [TypeSpecSearchScopes.tspScope] (plan 06 M6.5c retargets this off the deleted
+     * `filesContainingWord`/`TIER_C_FILE_CAP` word-index path onto
+     * [TypeSpecStubQueries.declarationsNamed] — same invariant, new mechanism). The two
+     * mechanisms — targeted import resolution and project-wide stub lookup — coexist over the
+     * *same* file.
      */
-    fun testLibraryReferenceResolvesIntoNodeModulesWhileTierCSearchExcludesIt() {
+    fun testLibraryReferenceResolvesIntoNodeModulesWhileStubIndexExcludesIt() {
         myFixture.configureByFiles(
             "imports/consumer/lib-consumer.tsp",
             "imports/consumer/node_modules/@acme/widgets/package.json",
@@ -180,12 +185,24 @@ class TypeSpecImportReferenceTest : BasePlatformTestCase() {
             scope.contains(resolvedVirtualFile),
         )
 
-        val hits = TypeSpecSearchScopes.filesContainingWord(project, "Widget")
-        val hitPaths = hits?.mapNotNull { it.virtualFile?.path }.orEmpty()
+        // ADR 0011 D4: no stub is ever built for a node_modules file in the first place — not
+        // merely "PsiFileImpl.getStub() == null" (that can return a non-null ad hoc unpersisted
+        // tree even for an excluded file); `canHaveStub` is the load-bearing assertion.
         assertFalse(
-            "tier C word-index search must not surface the node_modules file even though the " +
-                "import reference reaches it — actual hits: $hitPaths",
+            "a node_modules file must never be eligible for a stub tree at all",
+            StubTreeLoader.getInstance().canHaveStub(resolvedVirtualFile),
+        )
+
+        // `main.tsp` declares `model Widget {}` — the ONLY declaration named `Widget` in this
+        // fixture. A project-wide stub-index lookup must not surface it even though the import
+        // reference reaches the very same file by a targeted lookup.
+        val hits = TypeSpecStubQueries.declarationsNamed(project, "Widget", null)
+        val hitPaths = hits.mapNotNull { it.containingFile?.virtualFile?.path }
+        assertFalse(
+            "the stub index must not surface the node_modules file even though the import " +
+                "reference reaches it — actual hits: $hitPaths",
             hitPaths.contains(resolvedVirtualFile.path),
         )
+        assertTrue("expected zero index hits for a name declared only in node_modules", hits.isEmpty())
     }
 }

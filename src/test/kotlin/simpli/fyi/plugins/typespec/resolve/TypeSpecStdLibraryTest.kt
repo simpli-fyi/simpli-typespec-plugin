@@ -1,11 +1,13 @@
 package simpli.fyi.plugins.typespec.resolve
 
 import com.intellij.psi.PsiPolyVariantReference
+import com.intellij.psi.stubs.StubTreeLoader
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import simpli.fyi.plugins.typespec.psi.TypeSpecFile
 import simpli.fyi.plugins.typespec.psi.TypeSpecModelStatement
 import simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement
+import simpli.fyi.plugins.typespec.stubs.TypeSpecStubQueries
 
 /**
  * M5.6g / M5.6g' — the implicit `@typespec/compiler` std-library edge
@@ -229,9 +231,16 @@ class TypeSpecStdLibraryTest : BasePlatformTestCase() {
         )
     }
 
-    // ---- 8: reached along an import edge, tier C's node_modules exclusion is untouched ------
+    // ---- 8: reached along an import edge, the stub index's node_modules exclusion is untouched
 
-    fun testStdLibraryReachedByImplicitEdgeButExcludedFromTierCWordIndex() {
+    /**
+     * Retargeted (plan 06 M6.5c) off the deleted `filesContainingWord`/`TIER_C_FILE_CAP`
+     * word-index path onto [TypeSpecStubQueries.declarationsNamed]. The invariant this test
+     * protects did not change: the std library lives inside `node_modules`, is reached along the
+     * implicit import edge (M5.6g), and must stay invisible to project-wide search — this is
+     * exactly ADR 0011 D2/D4's split, and is what keeps a fixed EDT hang fixed (ADR 0008).
+     */
+    fun testStdLibraryReachedByImplicitEdgeButExcludedFromStubIndex() {
         installStdLibrary(mainBody = "model StdLibDistinctiveWord {}\n")
         val app = tsp("app-scope-pin.tsp", "model M { a: StdLibDistinctiveWord; }") as TypeSpecFile
 
@@ -241,20 +250,30 @@ class TypeSpecStdLibraryTest : BasePlatformTestCase() {
         val stdFile = closure.firstOrNull { it.virtualFile?.path?.endsWith("lib/std/main.tsp") == true }
         assertNotNull("the std library must be reached via the implicit edge alone", stdFile)
 
-        // ...but tier C's word-index prefilter must still exclude it (ADR 0010 D1, ADR 0008).
+        // ...but the stub-index query scope must still exclude it (ADR 0010 D1, ADR 0008).
         val scope = TypeSpecSearchScopes.tspScope(project)
         assertFalse(
             "the std library file reached along the implicit import edge must stay excluded " +
                 "from tspScope, exactly like any other node_modules file",
             scope.contains(stdFile!!.virtualFile!!),
         )
-        val hits = TypeSpecSearchScopes.filesContainingWord(project, "StdLibDistinctiveWord")
-        val hitNames = hits?.map { it.name }.orEmpty()
+
+        // ADR 0011 D4: no stub is ever built for it in the first place — `stub == null` is the
+        // wrong assertion (an ad hoc unpersisted tree can still come back non-null for an
+        // excluded file); `canHaveStub` is the load-bearing one.
         assertFalse(
-            "tier C's word index must not surface the std library file even though the " +
-                "implicit import edge can reach it — actual hits: $hitNames",
+            "the std library file must never be eligible for a stub tree at all",
+            StubTreeLoader.getInstance().canHaveStub(stdFile.virtualFile!!),
+        )
+
+        val hits = TypeSpecStubQueries.declarationsNamed(project, "StdLibDistinctiveWord", null)
+        val hitNames = hits.mapNotNull { it.containingFile?.name }
+        assertFalse(
+            "the stub index must not surface the std library file even though the implicit " +
+                "import edge can reach it — actual hits: $hitNames",
             hitNames.contains(stdFile.name),
         )
+        assertTrue("expected zero index hits for a name declared only inside the std library", hits.isEmpty())
     }
 
     // ---- 9: cost — closure is cached and does not crowd CLOSURE_CAP ------------------------

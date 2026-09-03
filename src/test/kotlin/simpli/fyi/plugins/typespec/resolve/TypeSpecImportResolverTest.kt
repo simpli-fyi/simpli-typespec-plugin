@@ -1,7 +1,9 @@
 package simpli.fyi.plugins.typespec.resolve
 
+import com.intellij.psi.stubs.StubTreeLoader
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import simpli.fyi.plugins.typespec.psi.TypeSpecFile
+import simpli.fyi.plugins.typespec.stubs.TypeSpecStubQueries
 
 /**
  * `TypeSpecImportResolver` — M5.6a ([ADR 0010](../../../../../../../../docs/adr/0010-library-import-resolution.md),
@@ -221,11 +223,13 @@ class TypeSpecImportResolverTest : BasePlatformTestCase() {
 
     /**
      * The library file the resolver just found via a targeted lookup must still be absent from
-     * tier C's word-index prefilter — the two mechanisms are disjoint (ADR 0010 D1). This is the
-     * same fixture the closure test above uses, so it is the *same* node_modules file proven
-     * reachable by import resolution and unreachable by search, in one place.
+     * the stub index's project-wide lookup — the two mechanisms are disjoint (ADR 0010 D1, plan
+     * 06 M6.5c). Retargeted off the deleted `filesContainingWord`/`TIER_C_FILE_CAP` word-index
+     * path onto [TypeSpecStubQueries.declarationsNamed]; this is the same fixture the closure
+     * test above uses, so it is the *same* node_modules file proven reachable by import
+     * resolution and unreachable by project-wide search, in one place.
      */
-    fun testResolvedLibraryFileStaysExcludedFromTierCWordIndex() {
+    fun testResolvedLibraryFileStaysExcludedFromStubIndex() {
         tsp(
             "node_modules/@acme/scope-pin/package.json",
             """{"tspMain": "lib/main.tsp"}""",
@@ -249,12 +253,21 @@ class TypeSpecImportResolverTest : BasePlatformTestCase() {
             scope.contains(libFile.virtualFile),
         )
 
-        val hits = TypeSpecSearchScopes.filesContainingWord(project, "ScopePinDistinctiveWord")
-        val hitNames = hits?.map { it.name }.orEmpty()
+        // ADR 0011 D4: excluded at stub-build time, not merely at query time. `stub == null` is
+        // the wrong assertion here (an ad hoc unpersisted tree can still be produced for an
+        // excluded file) — `canHaveStub` is what actually pins "no stub is ever built".
         assertFalse(
-            "tier C's word-index search must not surface a node_modules file even though " +
-                "import resolution can reach it by targeted lookup — actual hits: $hitNames",
+            "a node_modules file must never be eligible for a stub tree at all",
+            StubTreeLoader.getInstance().canHaveStub(libFile.virtualFile),
+        )
+
+        val hits = TypeSpecStubQueries.declarationsNamed(project, "ScopePinDistinctiveWord", null)
+        val hitNames = hits.mapNotNull { it.containingFile?.name }
+        assertFalse(
+            "the stub index must not surface a node_modules file even though import " +
+                "resolution can reach it by targeted lookup — actual hits: $hitNames",
             hitNames.contains(libFile.name),
         )
+        assertTrue("expected zero index hits for a name declared only in node_modules", hits.isEmpty())
     }
 }
