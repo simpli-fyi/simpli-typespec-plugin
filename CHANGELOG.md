@@ -22,11 +22,3 @@ First release. TypeSpec (`.tsp`) language support for IntelliJ IDEA Community Ed
   of `TypeSpec`, `OpenAPI` and `info` goes to its own declaration.
 - Editor conveniences: comment/uncomment, brace matching, quote handling, and
   spellchecking of comments and strings.
-
-### Notes
-
-- Works on a stock IntelliJ IDEA Community install. No Language Server, no Node.js, and
-  no Ultimate-only APIs are involved.
-- Rename and Go to Symbol are not implemented yet.
-- References that cannot be resolved are left unmarked rather than flagged as errors, so
-  a name the plugin cannot find looks the same as one it simply does not navigate.
