@@ -8,7 +8,9 @@ import com.intellij.util.IncorrectOperationException
  * M5b acceptance (plan 03, ADR 0004 D7): the named-element contract every declaration in scope
  * must satisfy, plus [TypeSpecFile]'s four ADR 0004 D7.4 accessors. Uses `ContractFixture.tsp`
  * under `src/test/testData/psi`, which exercises every declaration kind at once (a namespace, a
- * templated `model` with `extends`/`is`, a plain property, and a backtick-quoted name/property).
+ * templated `model` with `extends` (not `is` too — ADR 0007 D9: `extends` and `is` together are
+ * not valid TypeSpec and the corrected grammar rejects them), a plain property, and a
+ * backtick-quoted name/property).
  */
 class TypeSpecPsiContractTest : BasePlatformTestCase() {
 

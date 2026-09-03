@@ -39,15 +39,6 @@
 # don't trust, whenever a row lands.
 #
 # This file is deleted entirely at M6f (plan 04), once the corpus is a zero-baseline assertion.
-real/booking/booking.tsp  # row4: triple-quoted multi-line string (observed: line 57, @doc("""..."""))
-real/booking/signals/booking-created.tsp  # row3: model X is Y (observed: line 39, "&", "[", "{" or "|" expected, got ";")
-real/booking/signals/booking-voided.tsp  # row4: triple-quoted multi-line string (observed: line 19, @doc("""..."""))
-real/booking/signals/group.tsp  # row3: model X is Y (observed: line 46, "&", "[", "{" or "|" expected, got ";")
-real/booking/signals/signals.tsp  # row3: model X is Y (observed: line 24, "&", "[", "{" or "|" expected, got ";")
-real/common/signals/foxtrot.tsp  # row4: triple-quoted multi-line string (observed: line 56, @doc("""..."""))
-real/common/signals/payloaddata-umber-jade.tsp  # row3: model X is Y (observed: line 112, "&", "[", "{" or "|" expected, got ";")
-real/journey/signals/group.tsp  # row3: model X is Y (observed: line 34, "&", "[", "{" or "|" expected, got ";")
-real/journey/signals/signals.tsp  # row3: model X is Y (observed: line 25, "&", "[", "{" or "|" expected, got ";")
 stdlib/compiler/lib/intrinsics.tsp  # row10: scalar with body (observed: line 102, ";", "<" or extends expected, got "{")
 stdlib/compiler/lib/std/decorators.tsp  # row8: extern dec/model/fn (observed: line 30, extern dec doc(...))
 stdlib/compiler/lib/std/types.tsp  # row9: valueof in a template-parameter constraint (observed: line 79, "extends valueof Reflection.EnumMember")

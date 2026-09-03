@@ -37,6 +37,23 @@ class TypeSpecParsingTest : ParsingTestCase("parser", "tsp", TypeSpecParserDefin
 
     fun testModelIs() = doTest(true, true)
 
+    // M6c (plan 04, ADR 0007 D9): `is` admits either `;` or a body; `extends` still requires
+    // one. Covers all four corpus-observed shapes: bare `is B;`, templated `is D<E>;`, a
+    // decorated declaration, and `is G<H> { ... }` (the `@typespec/http` streams shape).
+    fun testModelIsNoBody() = doTest(true, true)
+
+    // Negative fixture locking ADR 0007 D9 in place: `extends` without a body, and
+    // `extends` + `is` together, both still produce a PsiErrorElement -- this is the exact
+    // combination `ContractFixture.tsp` (src/test/testData/psi) used to rely on the old,
+    // over-permissive grammar accepting.
+    fun testModelExtendsNoBodyIsError() = doTest(true)
+
+    // M6c row 4: the lexer already emits a single MULTILINE_STRING token per `"""..."""`
+    // literal (TypeSpecLexerTest#testTripleQuotedString pins this); this fixture is the
+    // parser-side golden -- a decorator argument, a decorated model-property default, and
+    // an alias value, matching the shape in corpus/real/booking/booking.tsp.
+    fun testMultilineString() = doTest(true, true)
+
     fun testModelSpread() = doTest(true, true)
 
     fun testModelOptionalProperty() = doTest(true, true)
