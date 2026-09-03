@@ -12,7 +12,6 @@
             <li>Navigable imports and decorator names</li>
             <li>Comment/uncomment, brace matching, quote handling, spellchecking</li>
         </ul>
-        <p>Works on a bare Community Edition.</p>
     ]]></description>
 
     <product-descriptor code="PSIMPLITSP" release-date="20260903" release-version="10"/>
