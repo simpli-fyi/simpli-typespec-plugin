@@ -121,4 +121,75 @@ class TypeSpecParsingTest : ParsingTestCase("parser", "tsp", TypeSpecParserDefin
      * separator upstream, not merely tolerated.
      */
     fun testModelExpressionSeparators() = doTest(true, true)
+
+    // ------------------------------------------------------------------
+    // M6f Job 2 (plan 04 §M6f) -- fixtures for constructs landed in M6d/M6e/M6e' that
+    // those milestones' dev runs deliberately left for tsp-tester to pin (dev runs may
+    // not touch src/test/). Goldens were dumped, hand-reviewed against the actual
+    // TypeSpec.bnf rule shapes (operation_spread_parameter_, op_statement's is_clause
+    // alternative, interface_heritage_, interface_operation's optional 'op', dec/fn
+    // modifier_* + statements, valueof_expression/typeof_expression, scalar_body,
+    // directive_statement, type_reference_'s call_argument_list alternative,
+    // trailing_comma_), then written -- never via -Didea.tests.overwrite.data=true.
+    // ------------------------------------------------------------------
+
+    /** M6d row 7: a plain spread parameter (`op foo(...Input): Output;`) and a decorated one
+     *  mixed with a named parameter (`op bar(@doc("d") ...Base, id: string): Widget;`) --
+     *  `operation_spread_parameter_`'s `decorator_application*` prefix. */
+    fun testOperationSpread() = doTest(true, true)
+
+    /** M6d: `op X is Y;` (bare) and `op X is Y<T>;` (templated) -- `op_statement`'s
+     *  `is_clause` alternative, ADR 0007 primary-source facts table's low-priority tail. */
+    fun testOpIs() = doTest(true, true)
+
+    /** M6d: `interface X extends A, B { ... }` -- `interface_heritage_`, a comma-separated
+     *  list of bare `type_reference_`s (not full type expressions). */
+    fun testInterfaceExtends() = doTest(true, true)
+
+    /** M6d: the optional `op` keyword prefix on an interface member
+     *  (`interface I { op foo(): void; }`) -- `ListKind.InterfaceMembers`'s
+     *  `allowedStatementKeyword`, zero corpus occurrences but grammatical upstream. */
+    fun testInterfaceOpPrefix() = doTest(true, true)
+
+    /** Negative fixture pinning ADR 0007 D9's corollary: `interface I is Stream<T>;` is
+     *  still rejected -- `parseInterfaceStatement` (and this grammar's `interface_statement`)
+     *  has no `is` branch. An earlier survey row wrongly claimed this form was accepted;
+     *  it is not, and must never become one by accident. */
+    fun testInterfaceIsRejected() = doTest(true)
+
+    /** M6e row 8: `extern dec`/`extern fn`/`extern model`, including the `internal extern fn`
+     *  modifier combination (`modifier_*`'s repeatable loop, verified against the corpus's
+     *  actual `internal extern dec/fn` occurrences, not just the plan's literal 'extern'-only
+     *  wording). */
+    fun testExternDeclarations() = doTest(true, true)
+
+    /** M6e rows 9/12: `valueof` in a model-property type, in a template-parameter `extends`
+     *  bound (`T extends valueof string`), and `typeof` in a model-property type. */
+    fun testValueofTypeof() = doTest(true, true)
+
+    /** M6e row 10: `scalar plainDate { init fromISO(value: string); init now(); }` --
+     *  `scalar_body`/`scalar_member`, reusing `dec_fn_parameter_list`. */
+    fun testScalarWithBody() = doTest(true, true)
+
+    /** M6e row 11: statement-level `#suppress "code" "message"` / `#deprecated "message"`
+     *  directives, each immediately preceding an `extern dec` declaration -- the corpus's
+     *  actual placement (never at model/enum/union member level). */
+    fun testStatementDirectives() = doTest(true, true)
+
+    /** M6e' gap 1: a call expression in type position (`alias X<T> = someFn(T, #{a: 1});`)
+     *  -- `type_reference_`'s `call_argument_list` alternative; the `#{...}` argument is
+     *  covered for free via `value_expression`. */
+    fun testCallExpressionInTypePosition() = doTest(true, true)
+
+    /** M6e' gap 2, the ACCEPTED bound: exactly one trailing comma after a real item, in
+     *  every list kind that carries `trailing_comma_?` -- decorator arguments, a tuple
+     *  type, template arguments, and call arguments. */
+    fun testTrailingSeparators() = doTest(true, true)
+
+    /** M6e' gap 2, the REJECTED bound: a doubled separator (`Page<Widget,,>`, no second item
+     *  between the commas) and an empty leading element (`Page<,Widget>`, no item before the
+     *  first comma) both still produce a `PsiErrorElement` at the comma, rather than being
+     *  silently swallowed -- `trailing_comma_?` accepts at most one comma directly after a
+     *  real item, never a bare comma standing in for one. */
+    fun testTrailingSeparatorsRejected() = doTest(true)
 }

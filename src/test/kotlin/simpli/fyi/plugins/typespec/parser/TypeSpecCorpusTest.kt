@@ -29,10 +29,11 @@ import java.io.File
  * grammar change (do not make `bad_*_token_` public to make this easier — ADR 0007 D2's
  * implementation note).
  *
- * The corpus is allowed to fail — extensively, right now (plan 04 §M6a-M6f) — but only in the
- * files [BASELINE] lists, and only until a later milestone lands the grammar fix. The ratchet is
- * bidirectional: a newly-failing file *and* a file that starts passing without being removed from
- * `BASELINE.txt` both fail this test, so the baseline can never silently drift from reality.
+ * As of M6f (plan 04 §M6f) the ratchet is gone: every corpus file must satisfy both properties
+ * unconditionally. There is no allowlist and no stored per-file categorisation to go stale — a
+ * failure report is generated fresh from the actual [PsiErrorElement]s / unclaimed leaves observed
+ * on *this* run, never from a label written on an earlier run (that staleness is exactly what
+ * cost real time under the old `BASELINE.txt` scheme; see the M6b/M6c tsp-tester reports).
  */
 class TypeSpecCorpusTest : BasePlatformTestCase() {
 
@@ -71,6 +72,13 @@ class TypeSpecCorpusTest : BasePlatformTestCase() {
         )
     }
 
+    /**
+     * The absolute gate (M6f, plan 04 §M6f). No allowlist: every corpus file must satisfy both
+     * ADR 0007 D2 properties. On failure the message names the offending file(s) and shows the
+     * actual observed [PsiErrorElement] text/position or unclaimed-leaf text/position -- enough to
+     * diagnose without re-running by hand. Never a stored categorisation (that was `BASELINE.txt`'s
+     * failure mode: a stale label naming a row that no longer applied).
+     */
     fun testCorpusMatchesBaseline() {
         val files = corpusFiles()
         assertTrue(
@@ -78,37 +86,49 @@ class TypeSpecCorpusTest : BasePlatformTestCase() {
             files.isNotEmpty(),
         )
 
-        val baseline = loadBaseline()
-        val actuallyFailing = sortedSetOf<String>()
+        val failures = mutableListOf<String>()
         for (f in files) {
             val relPath = f.relativeTo(corpusRoot).path.replace(File.separatorChar, '/')
             val text = f.readText()
             val psiFile = createTypeSpecFile(f.name, text)
-            val hasErrors = PsiTreeUtil.findChildrenOfType(psiFile, PsiErrorElement::class.java).isNotEmpty()
-            val hasUnclaimedLeaf = findUnclaimedLeaves(psiFile).isNotEmpty()
-            if (hasErrors || hasUnclaimedLeaf) {
-                actuallyFailing += relPath
+            val errors = PsiTreeUtil.findChildrenOfType(psiFile, PsiErrorElement::class.java)
+            val unclaimed = findUnclaimedLeaves(psiFile)
+            if (errors.isEmpty() && unclaimed.isEmpty()) continue
+
+            val detail = StringBuilder()
+            errors.take(5).forEach { err ->
+                val line = 1 + text.substring(0, err.textOffset.coerceAtMost(text.length)).count { it == '\n' }
+                detail.append(
+                    "      PsiErrorElement at offset ${err.textOffset} (line $line): " +
+                        "${err.errorDescription} near ${snippet(text, err.textOffset)}\n",
+                )
             }
+            if (errors.size > 5) detail.append("      ... and ${errors.size - 5} more PsiErrorElement(s)\n")
+            unclaimed.take(5).forEach { leaf ->
+                val offset = leaf.textOffset
+                val line = 1 + text.substring(0, offset.coerceAtMost(text.length)).count { it == '\n' }
+                detail.append(
+                    "      unclaimed leaf at offset $offset (line $line): " +
+                        "'${leaf.text}' near ${snippet(text, offset)}\n",
+                )
+            }
+            if (unclaimed.size > 5) detail.append("      ... and ${unclaimed.size - 5} more unclaimed leaf/leaves\n")
+
+            failures += "  $relPath (${errors.size} PsiErrorElement(s), ${unclaimed.size} unclaimed leaf/leaves):\n$detail"
         }
 
-        val baselineSet = baseline.keys
-        val newlyFailing = actuallyFailing - baselineSet
-        val noLongerFailing = baselineSet - actuallyFailing
+        assertTrue(
+            "\n${failures.size} corpus file(s) fail ADR 0007 D2 (no allowlist -- every corpus file " +
+                "must pass both properties, plan 04 §M6f):\n" + failures.joinToString("\n"),
+            failures.isEmpty(),
+        )
+    }
 
-        val report = StringBuilder()
-        if (newlyFailing.isNotEmpty()) {
-            report.append("\n${newlyFailing.size} file(s) fail but are NOT in BASELINE.txt " +
-                "(new regression, or BASELINE.txt needs a new entry with a row-number reason):\n")
-            newlyFailing.sorted().forEach { report.append("  + $it\n") }
-        }
-        if (noLongerFailing.isNotEmpty()) {
-            report.append("\n${noLongerFailing.size} file(s) are in BASELINE.txt but now PASS " +
-                "(an undeclared fix -- remove the entry from BASELINE.txt so the ratchet shrinks " +
-                "honestly):\n")
-            noLongerFailing.sorted().forEach { report.append("  - $it (was: ${baseline[it]})\n") }
-        }
-
-        assertTrue(report.toString(), newlyFailing.isEmpty() && noLongerFailing.isEmpty())
+    /** ~20 characters of surrounding source, single-lined, for a failure message. */
+    private fun snippet(text: String, offset: Int): String {
+        val start = (offset - 10).coerceAtLeast(0)
+        val end = (offset + 10).coerceAtMost(text.length)
+        return "\"" + text.substring(start, end).replace("\n", "\\n") + "\""
     }
 
     /**
@@ -243,7 +263,7 @@ class TypeSpecCorpusTest : BasePlatformTestCase() {
         realRoot.walkTopDown().filter { it.isFile && it.extension == "tsp" }.forEach { scan(it, mapHashes) }
 
         // Everything else that is committed test data or tooling but was NOT derived from the
-        // real repository -- the map file itself, both PROVENANCE.md files, BASELINE.txt, the
+        // real repository -- the map file itself, both PROVENANCE.md files, the
         // re-sync tooling, and every hand-authored fixture under `parser/` and `psi/` (golden
         // `.tsp` input and `.txt` PSI-tree output alike). These fixtures reuse ordinary short
         // property/type-parameter names (`id`, `type`, `T`) that legitimately, coincidentally
@@ -254,7 +274,6 @@ class TypeSpecCorpusTest : BasePlatformTestCase() {
             File(corpusRoot, "ANONYMISATION.md").takeIf { it.isFile },
             File(corpusRoot, "real/PROVENANCE.md").takeIf { it.isFile },
             File(corpusRoot, "stdlib/PROVENANCE.md").takeIf { it.isFile },
-            File(corpusRoot, "BASELINE.txt").takeIf { it.isFile },
         ) +
             (File("tools/corpus-sync").takeIf { it.isDirectory }?.walkTopDown()?.filter { it.isFile }?.toList() ?: emptyList()) +
             (File("src/test/testData/parser").takeIf { it.isDirectory }?.walkTopDown()?.filter { it.isFile }?.toList() ?: emptyList()) +
@@ -281,22 +300,6 @@ class TypeSpecCorpusTest : BasePlatformTestCase() {
                 .sortedBy { it.path }
                 .toList()
         }
-
-    /** `path/to/file.tsp -> reason` from BASELINE.txt (`path  # reason`, blank/`#`-only lines ignored). */
-    private fun loadBaseline(): Map<String, String> {
-        val baselineFile = File(corpusRoot, "BASELINE.txt")
-        if (!baselineFile.isFile) return emptyMap()
-        val result = linkedMapOf<String, String>()
-        baselineFile.readLines().forEach { rawLine ->
-            val line = rawLine.trim()
-            if (line.isEmpty() || line.startsWith("#")) return@forEach
-            val hashIdx = line.indexOf('#')
-            val path = if (hashIdx >= 0) line.substring(0, hashIdx).trim() else line
-            val reason = if (hashIdx >= 0) line.substring(hashIdx + 1).trim() else ""
-            if (path.isNotEmpty()) result[path] = reason
-        }
-        return result
-    }
 
     /** The hash-key set from ANONYMISATION.md's `rename-map` block -- `hash(source) -> target`
      *  lines. Only the hash (left-hand side) is meaningful here; the plaintext source name is
