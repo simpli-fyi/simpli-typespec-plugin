@@ -275,6 +275,53 @@
 
 ### Fixed
 
+- Three confirmed grammar defects in the same family as the member-directive cascade fix
+  below, found re-syncing the corpus (`real/common/lima.tsp`, and the owner's real
+  `standards.tsp`), all traced to the same root cause: `model_member_`'s `directive_statement`
+  alternative (added for the fix below) modelled a member-level directive as a member sibling
+  in its own right, which is not how upstream's parser actually works. Read directly from
+  `@typespec/compiler`'s `parser.js` (`parseList`, `parseAnnotations`): every list item
+  (model property/spread, enum member, union variant, interface operation) is preceded by a
+  single shared `parseAnnotations()` loop that collects directives AND decorators together, in
+  whatever order they appear, any number of each, before the parser even knows which item kind
+  follows — there is no separate "directive statement" member. `TypeSpec.bnf` is re-modelled to
+  match: a new private `member_annotation_ ::= decorator_application | directive_statement` is
+  now each real member rule's own leading prefix (`model_property`, `model_spread`,
+  `enum_member`, `union_variant`, `interface_operation`), replacing their previous
+  `decorator_application*`-only prefix, and the standalone `directive_statement` alternative is
+  removed from `model_member_`. This fixes, in one change:
+  - `enum`/`union`/`interface` member-level directives, which never got the `model_member_` fix
+    below and still broke their own member loop (`bad_enum_member_token_` /
+    `bad_union_variant_token_` / `bad_interface_member_token_` had no `DIRECTIVE` alternative) —
+    now all three also gain `DIRECTIVE` in their `bad_*_token_` fallback, matching
+    `bad_scalar_member_token_`'s existing precedent, for a lone directive with nothing real
+    following it before the body's closing brace.
+  - Decorators interleaved with a member directive in ANY order (`@a #d @b prop`, `#d @a @b
+    prop`) no longer roll back and silently drop the decorators as unclaimed leaves — the real
+    `lima.tsp`/`standards.tsp` shape (`@minLength(0) @maxLength(40) #deprecated "..." @field(70)
+    prop: string;`) now attaches all three decorators and the directive to the same property.
+  - `directive_argument_`'s `identifier` alternative — safe only at top level, where no
+    plain-identifier construct could follow a directive, an invariant that broke the moment a
+    directive could appear directly before a member — no longer swallows an undecorated
+    property's leading identifier as a further directive argument
+    (`#deprecated "x"` immediately followed by `name: string;`). Upstream itself bounds a
+    directive's argument list with a real `NewLine` token, which this lexer does not expose to
+    the grammar (`_TypeSpecLexer.flex` folds all whitespace into one `WHITE_SPACE` trivia
+    token); absent that signal, the `identifier` alternative is now guarded by a negative
+    lookahead (`identifier !(':' | '?')`) — an identifier immediately followed by `':'` or `'?'`
+    was never a valid directive argument to begin with (that shape only ever means "the next
+    member's name"), so this rejects exactly the ambiguous case without narrowing any
+    genuinely-valid directive usage.
+
+  Pin changes: `model_property`/`enum_member`/`union_variant`/`interface_operation` keep their
+  existing pins (`member_annotation_*` is one repeated sequence element, same position as the
+  `decorator_application*` it replaces). `model_spread` gains `member_annotation_*` as a NEW
+  leading element (upstream's `parseModelSpreadProperty` also receives whatever decorators/
+  directives `parseAnnotations()` collected ahead of it, even though decorators there are
+  flagged `invalid-decorator-location`) — `'...'` shifts from sequence position 1 to position 2,
+  so `model_spread`'s pin changes from `pin=1` to `pin=2`. No stub format, encoding, external-ID
+  or `node_modules`-predicate change, so `TypeSpecStubVersion.VERSION` is not bumped.
+
 - Confirmed resolution bug, real repro (ph-cdm `model/flight/flight.tsp` / `model/shared/standards.tsp`):
   `...MetaData;` and `defaultMeasurementVolume?: VolumeUnit;` failed to resolve even though
   `flight.tsp` directly `import`s `standards.tsp` (tier A/B territory, not a stub-index case).

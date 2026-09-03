@@ -274,25 +274,49 @@ model_body ::= '{' model_member_* '}' {
   pin=1
 }
 
-// `directive_statement` (`#deprecated "..."`/`#suppress "code" "msg"`) is a
-// valid model member per upstream (`parseModelPropertyOrSpread`'s caller loop
-// admits a leading directive on any member, not just top-level declarations —
-// see `directive_statement`'s own comment for the M6e history: the corpus at
-// that time had zero member-level occurrences, so this was deliberately
-// deferred). A real owner project (`ph-cdm`) has member-level `#deprecated`
-// directives inside `model` bodies; without this alternative, hitting one mid-body
-// breaks `model_property`'s own attempt (no alternative starts with DIRECTIVE),
-// falls through to `bad_model_member_token_` one token at a time, and never
-// resynchronizes before the model's own closing `'}'` — which then surfaces as
-// a SECOND, unrelated parse error at the brace, and (because the enclosing
-// `namespace_statement` is often the file's own blockless, `';'`-bodied form,
-// whose body is `top_level_item_*` with no closing brace of its own to recover
-// at) silently drops every declaration textually after the broken model for the
-// rest of the file — the exact shape that broke `using`/spread/property
-// resolution into `standards.tsp` in the owner's real repro. Placed first: the
-// DIRECTIVE token uniquely selects this alternative, no ambiguity with
-// `model_property`/`model_spread`'s own leading tokens.
-private model_member_ ::= directive_statement | model_property | model_spread | bad_model_member_token_
+// Plan 04 (post-M6f defect fix, 2026-09-03): re-modelled per upstream's ACTUAL
+// mechanism, read directly from `parser.js`'s `parseList` (verified, not
+// assumed): for every list item (model property/spread, enum member, union
+// variant, interface operation alike) the parser first runs a single shared
+// `parseAnnotations()` loop — `while (token() === Hash || token() === At) {
+// directives.push(...) | decorators.push(...) }` — collecting directives AND
+// decorators together, in WHATEVER ORDER they appear in the source, zero or
+// more of each, BEFORE it even knows which item kind follows; the collected
+// decorators are then threaded into `parseItem(pos, decorators)` and the
+// directives attached to the resulting node afterward. There is no upstream
+// production that treats a directive as a member in its own right, sitting
+// beside a property the way `directive_statement` briefly did here (`50ec08f`)
+// — that was a structural approximation that happened to fix the one repro it
+// targeted (a lone leading directive) but not the general case: decorators
+// AFTER a directive on the same member, or a directive between decorators
+// (`@minLength(0) @maxLength(40) #deprecated "..." @field(70) prop: string;`,
+// the owner's real `standards.tsp`/`lima.tsp` shape) still broke, because
+// `model_property`'s own `decorator_application*` prefix had no DIRECTIVE
+// alternative and rolled back whole on hitting one, discarding the decorators
+// already matched. Fixed at the true source: `model_property`/`model_spread`
+// (below) and `enum_member`/`union_variant`/`interface_operation` (their own
+// rules, same reasoning) now each carry `member_annotation_*` — a repeated,
+// order-free choice of `decorator_application | directive_statement` — as
+// their own leading prefix, matching `parseAnnotations()`'s mixed loop
+// exactly. No sequence-position change for `model_property`'s pin (still one
+// repeated element at position 1); `model_spread` gains the prefix as a NEW
+// position-1 element, shifting `'...'` to position 2 — PIN CHANGE, see
+// `model_spread`'s own comment. A lone directive with nothing real to attach
+// to (e.g. `model M { #deprecated "x" }`) now falls through to
+// `bad_model_member_token_` (which gains a DIRECTIVE alternative below, same
+// precedent as `bad_scalar_member_token_` already had) rather than being
+// caught by a dedicated top-level alternative here — upstream treats that
+// shape as a genuine parse error too (`parseModelProperty` still runs and
+// fails on `identifier` at `'}'`), so this is not a regression from upstream
+// behaviour, just a different (silent, ADR 0007 D2-visible) local failure mode
+// for an already-invalid input, out of this fix's scope.
+private model_member_ ::= model_property | model_spread | bad_model_member_token_
+
+// Shared leading-prefix element for every member/parameter-list item that upstream's
+// `parseList`/`parseAnnotations()` decorates uniformly: any mix, any order, any
+// repetition of decorator applications and member-level directives. See `model_member_`'s
+// own comment above for the primary-source citation.
+private member_annotation_ ::= decorator_application | directive_statement
 
 // Plan 04 M6b row 5 / ADR 0007 D6 follow-on: the reported defect-1 repro
 // (`@@package(A.B, { name: "x" })`, `@dec({title: "x"})`) is a `model_expression`
@@ -346,7 +370,13 @@ private trailing_comma_ ::= ','
 // own closing '}', then let the loop retry — is what lets a later, otherwise
 // well-formed property still parse as a proper `TypeSpecModelPropertyImpl`
 // after an earlier broken one.
-private bad_model_member_token_ ::= bad_model_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR | ';' | '.' | ','
+// DIRECTIVE added (post-M6f defect fix): now that `model_member_` no longer has a
+// dedicated `directive_statement` alternative (folded into `model_property`/`model_spread`'s
+// own `member_annotation_*` prefix instead — see `model_member_`'s comment), a directive
+// that fails to attach to any real member (e.g. one with nothing real following it before
+// the body's closing `'}'`) must still be consumable here, same precedent as
+// `bad_scalar_member_token_` already had.
+private bad_model_member_token_ ::= bad_model_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR | DIRECTIVE | ';' | '.' | ','
   | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '...')
 
 private bad_model_member_guard_ ::= !('}')
@@ -362,8 +392,19 @@ private bad_model_member_guard_ ::= !('}')
 // applies here too — `...Foo.Bar<T, U>,` inside a model body). The `'...'` pin
 // is kept: it is still the point of no return for this alternative of
 // `model_member_`.
-model_spread ::= '...' type_expression_ member_separator_? {
-  pin=1
+// `member_annotation_*` prefix added (post-M6f defect fix, see `model_member_`'s comment):
+// upstream's `parseModelSpreadProperty` still receives whatever `decorators`
+// `parseAnnotations()` collected ahead of it (immediately reported as
+// `invalid-decorator-location` via `reportInvalidDecorators`, but PARSED nonetheless — the
+// collection happens before upstream even knows the item is a spread, not a property), and
+// directives are attached the same uniform way. Accepting the same prefix here is
+// permissive in the same accepted direction as every other `member_annotation_*` site (an
+// over-permissive grammar produces a wrong-but-present tree; an under-permissive one drops
+// tokens as unclaimed leaves, which is what this fix exists to stop). PIN CHANGE:
+// `member_annotation_*` is a NEW sequence element at position 1, shifting `'...'` from
+// position 1 to position 2 — `pin=2` below, not `pin=1`.
+model_spread ::= member_annotation_* '...' type_expression_ member_separator_? {
+  pin=2
 }
 
 // Pins at ':' (position 4, after the leading `decorator_application*` and the
@@ -381,7 +422,14 @@ model_spread ::= '...' type_expression_ member_separator_? {
 // position 3 to position 4 — `pin=4` below, not `pin=3` (ADR 0007 plan 04 M6b
 // trap; a wrong pin here silently degrades error recovery without failing any
 // test).
-model_property ::= decorator_application* identifier '?'? ':' type_expression_ ('=' value_expression)? member_separator_? {
+// `member_annotation_*` (post-M6f defect fix, see `model_member_`'s comment): was
+// `decorator_application*` — repointed to the shared, order-free
+// `decorator_application | directive_statement` repetition so a member-level directive
+// interleaved with decorators in ANY order (`@a #d @b prop`, `#d @a @b prop`, ...) attaches
+// to this same property rather than breaking `model_property`'s own attempt. Still exactly
+// one sequence element at position 1 (a repetition, however many times it actually repeats,
+// is one grammar sequence position) — no pin change: `':'` stays at position 4.
+model_property ::= member_annotation_* identifier '?'? ':' type_expression_ ('=' value_expression)? member_separator_? {
   pin=4
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
@@ -561,18 +609,45 @@ dec_fn_parameter ::= '...'? identifier '?'? (':' type_expression_)?
 // keyword list precedes its identifier rule), so there is no plain-IDENTIFIER
 // top-level construct for it to collide with.
 //
-// Update (owner bug fix): member-level directive placement (inside a `model`
-// body) IS now implemented — see `model_member_`'s own comment — because a
-// real owner project has member-level `#deprecated` directives and the
-// original "no corpus file needs it" premise no longer holds. `enum`/`union`/
-// `interface` member positions are unchanged (still not implemented — no
-// confirmed repro needs them; extending this rule's reuse to those bodies is
-// future work, not bundled into this fix).
+// Update (owner bug fix, `50ec08f`): member-level directive placement (inside a `model`
+// body) IS now implemented, and (post-M6f defect fix) so are `enum`/`union`/`interface`
+// member positions — see `model_member_`'s comment and `enum_member`/`union_variant`/
+// `interface_operation`'s own `member_annotation_*` prefixes below; a real owner project
+// has member-level `#deprecated` directives, mixed with decorators, in all of these
+// positions, and the original "no corpus file needs it" premise no longer holds anywhere.
 directive_statement ::= DIRECTIVE directive_argument_* {
   pin=1
 }
 
-private directive_argument_ ::= STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)* | identifier
+// Upstream `parseDirectiveParameter` (verified directly against `parser.js`, not assumed)
+// accepts exactly `Token.Identifier | Token.StringLiteral` and the argument LIST is
+// terminated by a real `NewLine` token — upstream's lexer briefly turns off
+// `newLineIsTrivia` for the duration of `parseDirectiveExpression` specifically so that
+// boundary is visible to the parser. This grammar has no equivalent: `_TypeSpecLexer.flex`
+// folds every run of whitespace (newlines included) into one undifferentiated
+// `WHITE_SPACE` token that `ParserDefinition.getWhitespaceTokens()` binds as trivia before
+// the grammar ever sees it (ADR 0001/0006 lexer scope — changing that is a lexer decision,
+// not this grammar-defect fix's to make), so upstream's own termination signal is not
+// available here. Without SOME bound, the `identifier` alternative is unsafe the instant a
+// directive can appear directly before a real member (post-`50ec08f`, plan 04 M6e's own
+// premise "no plain-IDENTIFIER top-level construct for it to collide with" no longer holds
+// at member level): `#deprecated "x"` immediately followed by an undecorated `name: string;`
+// property greedily swallows `name` as a further directive argument, leaving `:`/`string`/
+// `;` as unclaimed leaves under `MODEL_BODY` (ADR 0007 D2's exact failure class — zero
+// `PsiErrorElement`s, confirmed repro). Bounded instead on the one structural signal that
+// IS available without a lexer change: a bare identifier is accepted as a directive
+// argument only when the token immediately after it is NOT `':'` or `'?'` — the two tokens
+// that mean "this identifier was actually the start of the next member's name", never
+// legal directly after a genuine directive argument (an identifier argument is a bare
+// word — a suppress code, say — never itself a name being declared). This is a real
+// constraint grounded in the actual collision, not an arbitrarily narrower reading of
+// upstream: every corpus/test directive argument remains exactly as accepted before, and
+// the guard only rejects the one shape that was never a valid directive argument to begin
+// with.
+private directive_argument_ ::= STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*
+  | identifier directive_argument_identifier_guard_
+
+private directive_argument_identifier_guard_ ::= !(':' | '?')
 
 // ============================================================================
 // M5c — type-expression precedence chain (plan 03 M5c Approach, settled;
@@ -819,8 +894,12 @@ private interface_member_ ::= interface_operation | bad_interface_member_token_
 // ADR 0006 D6: identical fallback-alternative recovery technique as
 // `bad_top_level_token_`/`bad_model_member_token_` — no `recoverWhile` (it
 // traps on its own successful match re-check, plan 03 M5c "Recovery").
+// DIRECTIVE added (post-M6f defect fix, same reasoning/precedent as `bad_model_member_token_`
+// above): `interface_operation`'s own `member_annotation_*` prefix (below) now handles a
+// directive that attaches to a real operation; this fallback only needs to catch one that
+// doesn't (nothing real left before the body's closing `'}'`).
 private bad_interface_member_token_ ::= bad_interface_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD
-  | DECORATOR | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')'
+  | DECORATOR | DIRECTIVE | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')'
   | '[' | ']' | '...')
 
 private bad_interface_member_guard_ ::= !('}')
@@ -836,7 +915,10 @@ private bad_interface_member_guard_ ::= !('}')
 // exercised beyond that). `'op'?` occupies sequence position 2, shifting
 // `operation_parameter_list` from position 3 to position 4 — `pin=4` below,
 // not `pin=3`.
-interface_operation ::= decorator_application* 'op'? identifier operation_parameter_list ':' type_expression_ ';' {
+// `member_annotation_*` (post-M6f defect fix, same reasoning as `model_property`'s own
+// comment above): was `decorator_application*`. Position 1, unchanged — `pin=4` still
+// marks `operation_parameter_list`.
+interface_operation ::= member_annotation_* 'op'? identifier operation_parameter_list ':' type_expression_ ';' {
   pin=4
 }
 
@@ -858,8 +940,11 @@ private enum_member_ ::= enum_member | bad_enum_member_token_
 // fallback alternative below (a harmless single-token "garbage" skip) and the
 // loop continues to the next real member — identical in spirit to how
 // `bad_model_member_token_` swallows leftover tokens after a broken property.
+// DIRECTIVE added (post-M6f defect fix, same reasoning/precedent as `bad_model_member_token_`
+// above): `enum_member`'s own `member_annotation_*` prefix (below) now handles a directive
+// that attaches to a real member; this fallback only needs to catch one that doesn't.
 private bad_enum_member_token_ ::= bad_enum_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR
-  | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']'
+  | DIRECTIVE | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']'
   | '...')
 
 private bad_enum_member_guard_ ::= !('}')
@@ -873,7 +958,10 @@ private bad_enum_member_guard_ ::= !('}')
 // `bad_enum_member_token_`'s fallback, which worked but attributed the comma to
 // no real node. Adding it here does not move the pin: `member_separator_?` is
 // appended after the existing sequence, so `identifier` stays at position 2.
-enum_member ::= decorator_application* identifier (':' value_expression)? member_separator_? {
+// `member_annotation_*` (post-M6f defect fix, same reasoning as `model_property`'s own
+// comment above): was `decorator_application*`. Position 1, unchanged — `pin=2` still
+// marks `identifier`.
+enum_member ::= member_annotation_* identifier (':' value_expression)? member_separator_? {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
@@ -893,8 +981,11 @@ union_body ::= '{' union_variant_* '}' {
 private union_variant_ ::= union_variant | bad_union_variant_token_
 
 // ADR 0006 D6: same reasoning as `bad_enum_member_token_` above.
+// DIRECTIVE added (post-M6f defect fix, same reasoning/precedent as `bad_model_member_token_`
+// above): `union_variant`'s own `member_annotation_*` prefix (below) now handles a directive
+// that attaches to a real variant; this fallback only needs to catch one that doesn't.
 private bad_union_variant_token_ ::= bad_union_variant_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR
-  | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']'
+  | DIRECTIVE | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']'
   | '...')
 
 private bad_union_variant_guard_ ::= !('}')
@@ -908,7 +999,10 @@ private bad_union_variant_guard_ ::= !('}')
 // table) -- so `union_variant` gets the same optional trailing `member_separator_?` as
 // `model_property`/`enum_member`. Appended after the existing sequence, so the pin does
 // not move: `':'` stays at position 3.
-union_variant ::= decorator_application* identifier ':' type_expression_ member_separator_? {
+// `member_annotation_*` (post-M6f defect fix, same reasoning as `model_property`'s own
+// comment above): was `decorator_application*`. Position 1, unchanged — `pin=3` still
+// marks `':'`.
+union_variant ::= member_annotation_* identifier ':' type_expression_ member_separator_? {
   pin=3
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
