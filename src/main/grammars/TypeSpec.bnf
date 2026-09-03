@@ -408,8 +408,16 @@ qualified_name ::= identifier ('.' identifier)*
 // itself — splitting `@Ns.name` into namespace + name is a separate, breaking
 // change to the M2/M3 lexer tests (ADR 0004 open question 1, owner's call, not
 // this milestone's).
+// M5.6d (ADR 0009 option B, plan 05): mixin="" attaches
+// TypeSpecDecoratorReferenceHost.getReferences(), one PsiReference per dotted `@Ns.name`
+// segment. No implements= — like import_statement above, the mixin already declares no
+// rule-specific interface of its own (it finds the DECORATOR/AUGMENT_DECORATOR token
+// generically), so there is nothing for Grammar-Kit's generated interface to extend. Adding
+// mixin= here does not rename TypeSpecDecoratorApplicationImpl or its element type, so no
+// parser goldens change and the lexer/.flex stays untouched.
 decorator_application ::= DECORATOR decorator_argument_list? {
   pin=1
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecDecoratorReferenceHost"
 }
 
 decorator_argument_list ::= '(' (value_expression (',' value_expression)* trailing_comma_?)? ')' {
@@ -421,8 +429,12 @@ decorator_argument_list ::= '(' (value_expression (',' value_expression)* traili
 // has at least one argument (the target reference); the lexer already
 // distinguishes `@@` (AUGMENT_DECORATOR) from `@` (DECORATOR), so there is no
 // ambiguity with `decorator_application` above.
+// M5.6d (ADR 0009 option B, plan 05): same mixin as decorator_application above — one shared
+// class, told apart at runtime by the token's own element type (AUGMENT_DECORATOR vs
+// DECORATOR), never by two copies that can drift.
 augment_decorator_statement ::= AUGMENT_DECORATOR '(' value_expression (',' value_expression)* trailing_comma_? ')' ';' {
   pin=1
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecDecoratorReferenceHost"
 }
 
 // ADR 0007 D6 / plan 04 M6a: unified with `type_expression_`, per upstream

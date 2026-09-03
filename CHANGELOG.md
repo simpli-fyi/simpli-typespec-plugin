@@ -6,6 +6,21 @@
 
 ### Added
 
+- M5.6d: decorator names now navigate on Cmd-click, per dotted segment — the owner's third
+  reported gap (`@TypeSpec.OpenAPI.info(#{ version: "1.5.1" })` did not resolve). The single
+  `DECORATOR`/`AUGMENT_DECORATOR` lexer token is untouched; `TypeSpecDecoratorReferenceHost`
+  (shared `mixin=` on `decorator_application` and `augment_decorator_statement`) splits the
+  token's own text on `.` after dropping the `@`/`@@` prefix and hangs one
+  `TypeSpecDecoratorReference` per segment, each resolving via `TypeSpecResolver.multiResolve`
+  (plan 06 M6.5c's name-list core). `@TypeSpec.<caret>OpenAPI.info` resolves to the namespace,
+  `@TypeSpec.OpenAPI.<caret>info` to the `extern dec info` declaration; both segments and the
+  `@@augment` form behave identically. Unresolved decorators (bare std-library ones such as
+  `@doc` without an explicit import, or genuinely unknown names) stay soft — no red squiggle.
+  Zero lexer, grammar-token, golden or highlighting changes (ADR 0009 option B's central claim,
+  confirmed: 256 tests unedited, `verifyPlugin` still Compatible with two `<depends>`). See
+  `docs/adr/0009-decorator-reference-strategy.md` and
+  `docs/plans/05-import-and-decorator-navigation.md` §M5.6d.
+
 - M6.5c: the resolver's project-wide tier now queries the stub index instead of the word-index
   file-cap prefilter. `TypeSpecSearchScopes.filesContainingWord` and `TIER_C_FILE_CAP` are
   deleted outright — no fallback. `TypeSpecResolver`'s core is now name-list based
