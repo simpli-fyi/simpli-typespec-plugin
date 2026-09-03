@@ -1,6 +1,6 @@
 import org.jetbrains.changelog.Changelog
-import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -88,15 +88,20 @@ dependencies {
     }
 }
 
+val pluginVersion = providers.gradleProperty("version")
+
 intellijPlatform {
     pluginConfiguration {
         // The `org.jetbrains.changelog` plugin was applied but never wired to anything, so
         // the plugin shipped with no change notes at all. CHANGELOG.md is the single source:
         // its section for the current version, or [Unreleased] before a release is cut.
-        changeNotes = provider {
+        // Read through a provider rather than `project.version` so this stays
+        // configuration-cache compatible.
+        val changelog = project.changelog
+        changeNotes = pluginVersion.map { version ->
             with(changelog) {
                 renderItem(
-                    (getOrNull(project.version.toString()) ?: getUnreleased())
+                    (getOrNull(version) ?: getUnreleased())
                         .withHeader(false)
                         .withEmptySections(false),
                     Changelog.OutputType.HTML,
@@ -106,14 +111,62 @@ intellijPlatform {
 
         ideaVersion {
             sinceBuild = "252"
+            // Deliberately open-ended (no untilBuild): ADR 0002 D3 verifies forward
+            // compatibility with the Plugin Verifier rather than by capping the range.
             untilBuild = provider { null }
+        }
+    }
+
+    // Marketplace signing. All three come from the environment, never the repo — the
+    // matching secrets are consumed by .github/workflows/release.yml. A local
+    // `buildPlugin` works without them; only `signPlugin`/`publishPlugin` need them.
+    signing {
+        certificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PRIVATE_KEY")
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
+    }
+
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN")
+        // A SemVer pre-release label picks the release channel: 1.0.0 -> "default",
+        // 1.1.0-eap.2 -> "eap". Keeps pre-releases out of the stable channel without
+        // any extra release-time flag.
+        channels = pluginVersion.map {
+            listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "default" })
         }
     }
 
     pluginVerification {
         ides {
-            create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.2.6.3")
+            // `untilBuild` is open, so the plugin claims compatibility with every build
+            // from 252 onward. `recommended()` was measured here and resolves to exactly
+            // one IDE (IC-2025.2.6.3, our own compile target), which would not support
+            // that claim -- so the range is stated explicitly instead.
+            //
+            // Community only, on purpose: ADR 0002 D1 makes the CE compile classpath the
+            // enforcement mechanism for this project's constraint, and verifying against
+            // the Community distributions is what proves the claim we actually make.
+            // `./gradlew printProductsReleases` prints what this resolves to.
+            select {
+                types = listOf(IntelliJPlatformType.IntellijIdeaCommunity, IntelliJPlatformType.IntellijIdeaUltimate)
+                sinceBuild = "252"
+                untilBuild = "263.*"
+            }
         }
+    }
+}
+
+// Configure Gradle Changelog Plugin -> https://github.com/JetBrains/gradle-changelog-plugin
+changelog {
+    groups.empty()
+    repositoryUrl = providers.gradleProperty("pluginRepositoryUrl")
+}
+
+tasks {
+    // Cut the [Unreleased] section into a versioned one as part of publishing, so the
+    // Marketplace notes and CHANGELOG.md can never drift apart.
+    publishPlugin {
+        dependsOn(patchChangelog)
     }
 }
 
