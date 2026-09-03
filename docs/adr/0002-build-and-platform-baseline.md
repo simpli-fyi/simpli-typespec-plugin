@@ -164,7 +164,7 @@ Ratified by the owner on 2026-09-02, to sit alongside the already-released
 | Gradle `group` | `simpli.fyi` | **ratified** |
 | Kotlin package root | `simpli.fyi.plugins.typespec` | **ratified** — deliberately forward-domain, not reverse-domain, so the package matches the plugin id and the Forge plugin's id shape |
 | `<id>` in `plugin.xml` | `simpli.fyi.plugins.typespec` | **ratified** — follows `simpli.fyi.plugins.<product>` |
-| `<name>` | `Simpli TypeSpec Highlighter` | **ratified** — the `Simpli <product> <function>` pattern also sidesteps the Marketplace display-name collision with `siketyan`'s plugin |
+| `<name>` | `Simpli TypeSpec` | **ratified** (renamed 2026-09-03 from `Simpli TypeSpec Highlighter`: the plugin outgrew highlighting — it now carries a parser, PSI, reference resolution and navigation, so the `<function>` half was misleading). The `Simpli` prefix still sidesteps the Marketplace display-name collision with `siketyan`'s plugin. |
 | `<vendor>` | `simpli.fyi`, `hello@simpli.fyi`, `https://simpli.fyi` | **ratified** |
 | `version` | `0.0.1` | proposed |
 | Source-set layout | `src/main/kotlin/simpli/fyi/plugins/typespec/...`, JFlex spec in `src/main/grammars/`, generated lexer into `build/generated/sources/jflex/` | decided |

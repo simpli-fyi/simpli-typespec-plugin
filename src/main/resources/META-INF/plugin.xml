@@ -1,10 +1,17 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
     <id>simpli.fyi.plugins.typespec</id>
-    <name>Simpli TypeSpec Highlighter</name>
+    <name>Simpli TypeSpec</name>
     <vendor email="hello@simpli.fyi" url="https://simpli.fyi">simpli.fyi</vendor>
     <description><![CDATA[
-        <p>TypeSpec (.tsp) syntax highlighting for IntelliJ IDEA Community Edition.</p>
+        <p>TypeSpec (<code>.tsp</code>) language support for IntelliJ IDEA Community Edition.</p>
+        <ul>
+            <li>Syntax highlighting with a configurable colour scheme</li>
+            <li>Go to declaration across files, modules and imported libraries</li>
+            <li>Find usages</li>
+            <li>Navigable imports and decorator names</li>
+            <li>Comment/uncomment, brace matching, quote handling, spellchecking</li>
+        </ul>
         <p>Works on a bare Community install: no LSP, no Node.js, no Ultimate-only APIs.</p>
     ]]></description>
 

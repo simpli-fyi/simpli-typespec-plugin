@@ -1,6 +1,6 @@
 <!-- Keep a Changelog guide -> https://keepachangelog.com -->
 
-# Simpli TypeSpec Highlighter Changelog
+# Simpli TypeSpec Changelog
 
 ## [Unreleased]
 

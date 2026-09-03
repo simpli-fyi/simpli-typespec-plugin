@@ -1,6 +1,6 @@
 import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
 
-rootProject.name = "simpli-typespec-highlighter"
+rootProject.name = "simpli-typespec"
 
 pluginManagement {
     plugins {

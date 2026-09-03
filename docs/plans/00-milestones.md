@@ -132,7 +132,7 @@ signing/publishing config. CI changes beyond deleting the two dead workflows.
 **Files to create/modify**
 ```
 build.gradle.kts                        (modify)
-settings.gradle.kts                     (modify — rootProject.name = "simpli-typespec-highlighter")
+settings.gradle.kts                     (modify — rootProject.name = "simpli-typespec")
 gradle.properties                       (modify)
 src/main/resources/META-INF/plugin.xml  (modify)
 .gitignore                              (modify)
