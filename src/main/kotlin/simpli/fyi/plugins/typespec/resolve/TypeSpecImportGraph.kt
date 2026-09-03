@@ -13,9 +13,19 @@ import simpli.fyi.plugins.typespec.psi.TypeSpecImportStatement
  * D2, [plan 02](../../../../../../../../docs/plans/02-navigation.md)). Turns
  * `import "./x.tsp";` into files.
  *
- * Only relative paths (`./`, `../`) are followed — a bare specifier (`import "@typespec/rest";`)
- * is skipped (ADR 0004 open question 2). Cycle-safe via a visited [VirtualFile] set; TypeSpec
- * allows import cycles. Capped at [CLOSURE_CAP] files, defensively.
+ * Only relative paths (`./`, `../`) are followed for *explicit* imports — a bare specifier
+ * (`import "@typespec/rest";`) resolves via [TypeSpecImportResolver] like any other (ADR 0010).
+ * Cycle-safe via a visited [VirtualFile] set; TypeSpec allows import cycles. Capped at
+ * [CLOSURE_CAP] files, defensively.
+ *
+ * The closure also always includes the implicit `@typespec/compiler` standard-library entry
+ * point ([plan 06](../../../../../../../../docs/plans/06-stub-index.md) M5.6g,
+ * [ADR 0010](../../../../../../../../docs/adr/0010-library-import-resolution.md) open question
+ * 1) — the real compiler loads it whether or not a file imports anything, which is why `@doc`,
+ * `@key` and the rest of the std-library decorators are unresolved without this. Resolved via
+ * the same [TypeSpecImportResolver] used for explicit bare specifiers — no hardcoded path. When
+ * `@typespec/compiler` is not installed (no `node_modules`, or no such package), the resolver
+ * returns `null` and nothing is seeded — silent, no error (ADR 0010 D5).
  *
  * Cached per file with a dependency on [PsiModificationTracker.MODIFICATION_COUNT] —
  * deliberately asymmetric with [TypeSpecFileDeclarations]'s per-file dependency: the import
@@ -26,7 +36,13 @@ object TypeSpecImportGraph {
 
     const val CLOSURE_CAP = 200
 
-    /** The transitive closure of [file]'s `import` statements, including [file] itself. */
+    /** The bare specifier the TypeSpec compiler implicitly loads for every file. */
+    private const val STD_LIBRARY_SPECIFIER = "@typespec/compiler"
+
+    /**
+     * The transitive closure of [file]'s `import` statements plus the implicit std-library edge,
+     * including [file] itself.
+     */
     fun transitiveClosure(file: TypeSpecFile): Set<TypeSpecFile> =
         CachedValuesManager.getCachedValue(file) {
             CachedValueProvider.Result.create(compute(file), PsiModificationTracker.MODIFICATION_COUNT)
@@ -40,6 +56,16 @@ object TypeSpecImportGraph {
         file.virtualFile?.let { visited.add(it) }
         result.add(file)
         queue.add(file)
+
+        // Implicit std-library edge (plan 06 M5.6g) — seeded once, from the starting file only,
+        // exactly like an `import "@typespec/compiler";` the user never has to write. Absent or
+        // unresolvable degrades to seeding nothing.
+        val stdLibrary = TypeSpecImportResolver.resolve(file, STD_LIBRARY_SPECIFIER)
+        val stdLibraryFile = stdLibrary?.virtualFile
+        if (stdLibrary != null && stdLibraryFile != null && visited.add(stdLibraryFile)) {
+            result.add(stdLibrary)
+            queue.add(stdLibrary)
+        }
 
         while (queue.isNotEmpty() && result.size < CLOSURE_CAP) {
             ProgressManager.checkCanceled()

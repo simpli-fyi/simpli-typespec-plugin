@@ -185,6 +185,34 @@
   `bindToElement` throw, same stated limitation as M5.5's identifier reference). No new
   `<depends>`.
 
+- M5.6g (plan 06, ADR 0010 open question 1): every file's transitive-closure tier B now also
+  implicitly includes the `@typespec/compiler` standard-library entry point, matching the real
+  compiler's behaviour of always loading it whether or not a file imports anything.
+  `resolve/TypeSpecImportGraph.compute` seeds its BFS queue with
+  `TypeSpecImportResolver.resolve(file, "@typespec/compiler")` once, from the starting file,
+  in addition to `file` itself — no new resolution path, no hardcoded path, `node_modules`
+  entered only along this one resolver lookup exactly as ADR 0010 already sanctioned. Absent
+  or unresolvable `@typespec/compiler` (no `node_modules`, package not installed) seeds
+  nothing, silently — no exception, no notification. `TypeSpecSearchScopes` is untouched.
+  Measured effect: a std-library declaration (e.g. `scalar string;` in `lib/std/main.tsp`)
+  now resolves from any file that writes `using TypeSpec;`, without an explicit `import`.
+  **Known gap, not closed by this milestone:** a file that writes neither `using TypeSpec;`
+  nor lives inside `namespace TypeSpec { ... }` still does not resolve unqualified std-lib
+  names — the real compiler injects an implicit, ambient `using TypeSpec;` into every source
+  file once the std library is loaded (`name-resolver.js`'s `addUsingSymbols` over every
+  `program.sourceFiles`), and this plugin's scope resolver (`TypeSpecScope`/
+  `TypeSpecResolver`) does not model that; closing it needs a follow-up decision, not
+  guesswork, since it changes core scope-chain semantics rather than the import graph.
+  Decorator references (`@doc`, `@key`, …) are unaffected by this milestone either way — the
+  grammar has no `PsiReference` on a decorator name yet (`DECORATOR` is a single lexer token,
+  never wrapped in `qualified_name`), which is M5.6d's job, listed as absorbed into a later
+  milestone. Compiler intrinsics `void`/`never`/`unknown` are lexer keywords in this grammar,
+  never identifiers, so they are not reference positions and cannot resolve by nature.
+  `string`/`int32`/`boolean`/`float` etc. are declared in `lib/intrinsics.tsp`, which is
+  *not* imported by `lib/std/main.tsp`'s closure (verified against the real package under
+  `@typespec/compiler` — the compiler loads it out-of-band, not via `import`), so this
+  milestone's edge does not reach that file either.
+
 ### Fixed
 
 - Grammar corrections from the ph-cdm corpus audit (plan 04 M6a/M6b; see
