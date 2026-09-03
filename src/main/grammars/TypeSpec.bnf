@@ -463,7 +463,14 @@ tuple_expression ::= '[' (type_expression_ (',' type_expression_)*)? ']' {
 // scalar).
 // ============================================================================
 
-op_statement ::= decorator_application* 'op' identifier operation_parameter_list ':' type_expression_ ';' {
+// Plan 04 M6d: `op` gains an `is` heritage alternative (`op foo is Bar;`,
+// ADR 0007 primary-source facts table — zero corpus occurrences but
+// grammatical upstream, listed as M6d's low-priority tail) and an optional
+// `template_parameter_list` (upstream `parseOperationStatement` admits one;
+// plan 04 M6d Approach specifies it explicitly on this rule). `pin=2` is
+// unaffected — it still marks 'op' itself, before both new pieces.
+op_statement ::= decorator_application* 'op' identifier template_parameter_list?
+    ( (is_clause ';') | (operation_parameter_list ':' type_expression_ ';') ) {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
@@ -477,7 +484,34 @@ operation_parameter_list ::= '(' (operation_parameter (',' operation_parameter)*
 // id: string): ...`. Not part of ADR 0004 D7.2's named-element contract (only
 // `op`/`interface`/`enum`+member/`union`+variant/`alias`/`scalar` are), so no
 // `mixin=`/`implements=` here — same precedent as `model_spread` in M5b.
-operation_parameter ::= decorator_application* identifier '?'? ':' type_expression_ {
+//
+// Plan 04 M6d row 7: `op foo(...Input): Output;` — verified directly against
+// the corpus (`stdlib/protobuf/test/scenarios/simple/input/main.tsp` etc.,
+// 37 stdlib occurrences / 29 files, the single largest remaining corpus
+// category) that a spread parameter is `'...' type_expression_` with NO
+// trailing `identifier '?'? ':'` — the same shape as `model_spread`, not a
+// named parameter with a leading `'...'?`. (The plan's approach line reads
+// as a single sequence with `'...'?` prefixing the named-parameter shape;
+// probing that literally against `op foo(...Input): Output;` fails with
+// "'(' , '<' or 'is' expected, got '('" / "expected ')' , '...' , ':' ...
+// got '...'" — the parser cannot find a `:` after `Input` because there
+// isn't one. Corrected to two full alternatives below, the same pattern
+// `model_member_` already uses for `model_property | model_spread`.)
+operation_parameter ::= operation_spread_parameter_ | operation_named_parameter_
+
+// `'...'` occupies sequence position 2 (after `decorator_application*`) —
+// `pin=2`, mirroring `model_spread`'s own `pin=1` for `'...'` at position 1
+// (that rule has no decorator prefix; this one does).
+private operation_spread_parameter_ ::= decorator_application* '...' type_expression_ {
+  pin=2
+}
+
+// Unchanged named-parameter shape plus the optional default value
+// (`('=' value_expression)?`, mirroring `model_property`'s own default,
+// kitchen-sink's `weight?: int32 = 10;`). `':'` stays at position 4 — no pin
+// move here, since the spread form is now a fully separate alternative
+// rather than a shared `'...'?` prefix.
+private operation_named_parameter_ ::= decorator_application* identifier '?'? ':' type_expression_ ('=' value_expression)? {
   pin=4
 }
 
@@ -485,11 +519,22 @@ operation_parameter ::= decorator_application* identifier '?'? ':' type_expressi
 // []; get(id: string): Widget<string> | Error;`, kitchen-sink's `Store`) — NOT
 // bare properties. The invalid `interface Store { values: #[1, 2, 3]; }` shape
 // from `kitchen-sink.tsp` is explicitly not valid TypeSpec and is not
-// accommodated here (plan 03 M5c "Kitchen-sink scope resolution").
-interface_statement ::= decorator_application* 'interface' identifier template_parameter_list? interface_body {
+// accommodated here (plan 03 M5c "Kitchen-sink scope resolution", ADR 0007 D10).
+// Plan 04 M6d: `interface_heritage_?` is added — `interface X extends A, B`.
+// Per ADR 0007's primary-source facts table (`parseInterfaceStatement`,
+// `ListKind.Heritage`/`parseReferenceExpression`), heritage is a
+// comma-separated list of *reference expressions*, NOT full type expressions
+// — deliberately narrower than `extends_clause`'s `type_expression_` above.
+// There is NO `interface ... is` form upstream (`parseInterfaceStatement` has
+// no `is` branch at all — ADR 0007 D9 corollary); do not add one.
+interface_statement ::= decorator_application* 'interface' identifier template_parameter_list? interface_heritage_? interface_body {
   pin=2
   mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
   implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+private interface_heritage_ ::= 'extends' type_reference_ (',' type_reference_)* {
+  pin=1
 }
 
 interface_body ::= '{' interface_member_* '}' {
@@ -510,8 +555,16 @@ private bad_interface_member_guard_ ::= !('}')
 // Not part of ADR 0004 D7.2's named-element contract (interface operation
 // *members* are deliberately excluded from the list — only the top-level `op`
 // declaration is), so no `mixin=`/`implements=` here.
-interface_operation ::= decorator_application* identifier operation_parameter_list ':' type_expression_ ';' {
-  pin=3
+// Plan 04 M6d: mirrors `operation_parameter`'s spread/default changes via
+// `operation_parameter_list`, and accepts an optional leading `'op'` keyword
+// (`ListKind.InterfaceMembers`'s `allowedStatementKeyword: Token.OpKeyword`,
+// ADR 0007 primary-source facts table — grammatical upstream, zero corpus
+// occurrences, implemented per the plan's explicit instruction but not
+// exercised beyond that). `'op'?` occupies sequence position 2, shifting
+// `operation_parameter_list` from position 3 to position 4 — `pin=4` below,
+// not `pin=3`.
+interface_operation ::= decorator_application* 'op'? identifier operation_parameter_list ':' type_expression_ ';' {
+  pin=4
 }
 
 enum_statement ::= decorator_application* 'enum' identifier enum_body {

@@ -226,4 +226,47 @@
     segment onto the declaration's one full path); it now reconstructs the denoted path as
     "the path a segment was found under" + "its own name", recursively, for both dotted and
     block-nested namespaces.
+  - M6d (plan 04 §M6d): the operation/interface surface, per ADR 0007's primary-source
+    facts table.
+    - `operation_parameter` is split into two full alternatives —
+      `operation_spread_parameter_` (`decorator_application* '...' type_expression_`,
+      `pin=2`) and `operation_named_parameter_` (unchanged named-parameter shape plus an
+      optional `('=' value_expression)?` default, `pin=4`) — instead of a single sequence
+      with a leading `'...'?`. Verified directly against the corpus
+      (`stdlib/protobuf/test/scenarios/simple/input/main.tsp`) that a spread parameter
+      (`op foo(...Input): Output;`, row 7, the largest remaining corpus category — 37
+      stdlib occurrences / 29 files) is `'...' type_expression_` with no following
+      `identifier '?'? ':'`, the same shape as `model_spread`, not a named parameter with
+      a `'...'?` prefix as one reading of the plan's approach line suggested; probing that
+      literal reading against the actual construct fails with a self-contradictory parser
+      error ("expected '...', got '...'"), so the corrected two-alternative form is what
+      shipped.
+    - `op_statement` gains an optional `template_parameter_list?` and an `is`-heritage
+      alternative (`op foo is Bar;`, `op foo is Bar<T>;` — zero corpus occurrences, listed
+      in the plan as low-priority but grammatical upstream). `pin=2` (on `'op'`) is
+      unaffected.
+    - `interface_statement` gains an optional `interface_heritage_?`
+      (`'extends' type_reference_ (',' type_reference_)*`, `pin=1`) — per
+      `parseInterfaceStatement`/`ListKind.Heritage` (ADR 0007 primary-source facts table),
+      `interface X extends A, B` is a comma-separated list of *reference expressions*
+      (`type_reference_`), deliberately narrower than `extends_clause`'s full
+      `type_expression_`. There is no `interface ... is` form upstream and none was added;
+      `interface I is Stream<T>;` still produces a `PsiErrorElement` (probed directly,
+      confirmed unchanged). `interface_statement`'s own `pin=2` is unaffected.
+    - `interface_operation` gains an optional leading `'op'?` keyword
+      (`ListKind.InterfaceMembers`'s `allowedStatementKeyword: Token.OpKeyword` — zero
+      corpus occurrences, implemented per the plan's explicit instruction) and now delegates
+      its parameter list to the updated `operation_parameter`. `'op'?` occupies sequence
+      position 2 (after `decorator_application*`), shifting `operation_parameter_list` from
+      position 3 to 4 — `pin=4`, not `pin=3`.
+    - `model M extends Foo;` (ADR 0007 D9) was re-probed and confirmed still a
+      `PsiErrorElement` — unaffected by this milestone's changes.
+    - No hand-authored parser golden shifted: `Operation.txt` and `Interface.txt` (neither
+      fixture exercises spread parameters, `op ... is`, or `extends` heritage) are
+      byte-identical; all 189 non-corpus tests pass.
+    - 27 `corpus/stdlib/protobuf/test/scenarios/**/input/main.tsp` files whose only blocker
+      was row 7 now parse with zero `PsiErrorElement`s and zero unclaimed leaves (removed
+      from `BASELINE.txt` by the ratchet's next update — not done in this milestone, since
+      `src/test/` is out of scope for `tsp-dev`). `corpus/real/**` is unaffected: it remained
+      at 0 `BASELINE.txt` entries before and after this change.
 
