@@ -118,39 +118,111 @@ class TypeSpecResolveTest : BasePlatformTestCase() {
     // ---- 7: dotted namespace declaration ---------------------------------------------------
 
     /**
-     * KNOWN BUG (reported, not fixed — `src/main/` is not tsp-tester's to edit). Plan 02 case
-     * 7 requires "`A.B.C.Model` resolves through `namespace A.B.C`". It does not, as
-     * implemented:
+     * Plan 02 case 7: `A.B.C.Model` resolves through `namespace A.B.C`. Previously a known bug
+     * (`TypeSpecFileDeclarations` only indexed a dotted namespace declaration's last segment,
+     * so the leading segments of a qualified reference never resolved); fixed by indexing every
+     * dotted segment under its own prefix path, all pointing at the same statement, and by
+     * `TypeSpecResolver.resolveSegment` reconstructing the denoted path explicitly instead of
+     * reading it back off the (now shared) resolved element via `fullPathOf`.
      *
-     * `TypeSpecFileDeclarations.build` records a namespace declaration's name as its LAST
-     * dotted segment only ("C" for `namespace A.B.C`), keyed by the declaration's LEXICAL
-     * container path — it never indexes the intermediate virtual segments "A" or "A.B"
-     * anywhere `byName` can find them. Resolving the leading segment "A" of a four-segment
-     * reference therefore finds no declaration; `TypeSpecResolver.resolveTrailingSegment` for
-     * "B"/"C"/"Model" is then fed an unresolved `previousSegment` at every step, and the whole
-     * chain returns null. Confirmed by running this exact assertion: `elementAtCaret` throws
-     * "element not found ... TargetElementUtilBase.findTargetElement(...)=null".
-     *
-     * This test pins the CURRENT (broken) behaviour so the suite is green and the gap is
-     * tracked; it must be flipped back to the plan 02 assertion (commented out below) when the
-     * resolver gains support for qualified references through a dotted namespace's virtual
-     * intermediate segments.
+     * Per the fix's design decision: `namespace A.B.C;` has no standalone declaration of `A` or
+     * `A.B` — the intermediate segments resolve to the *same* `namespace A.B.C` statement as the
+     * full name does, since that statement is the only declaration site they have.
      */
-    fun testDottedNamespaceDeclarationQualifiedReferenceDoesNotResolveKnownBug() {
+    fun testDottedNamespaceDeclarationQualifiedReferenceResolves() {
         myFixture.configureByFile("resolve/dotted-ns.tsp")
-        val reference = myFixture.file.findReferenceAt(myFixture.caretOffset)
+        val target = myFixture.elementAtCaret
+        assertTrue(target is TypeSpecModelStatement)
+        assertEquals("Model", (target as TypeSpecNamedElement).name)
+    }
+
+    /** Same fixture, intermediate segments: `A` and `A.B` both resolve to `namespace A.B.C`. */
+    fun testDottedNamespaceDeclarationIntermediateSegmentsResolveToSameStatement() {
+        myFixture.configureByFile("resolve/dotted-ns-intermediate.tsp")
+        val text = myFixture.file.text
+
+        // `A.B.C.Model` (the reference usage) appears exactly once; the declaration
+        // `namespace A.B.C {` has no trailing `.Model` and so is not matched by this anchor.
+        val usageStart = text.lastIndexOf("A.B.C.Model")
+        assertTrue("usage `A.B.C.Model` not found", usageStart >= 0)
+        val offsetA = usageStart // "A"
+        val offsetB = usageStart + 2 // "B"
+
+        val a = myFixture.file.findReferenceAt(offsetA)?.resolve()
+        assertTrue(a is TypeSpecNamespaceStatement)
+        assertEquals("C", (a as TypeSpecNamedElement).name)
+
+        val b = myFixture.file.findReferenceAt(offsetB)?.resolve()
+        assertTrue(b is TypeSpecNamespaceStatement)
+        assertEquals("C", (b as TypeSpecNamedElement).name)
+
+        assertEquals("intermediate segments must resolve to the same declaration node", a, b)
+    }
+
+    // ---- multi-file overlapping dotted prefixes (Job 2, investigative) ----------------------
+
+    /**
+     * `namespace A.B.C;` in `overlap-a.tsp` and `namespace A.B.D;` in `overlap-b.tsp`, both
+     * imported by `overlap-main.tsp`. Per the fix's indexing scheme both files index "A" at
+     * path `[]` and "B" at path `["A"]`, so resolving the "B" segment of `A.B.C.Model` should
+     * yield BOTH namespace statements (one per file establishing the `A.B` prefix) — the same
+     * multi-candidate shape a reopened, non-dotted namespace already produces. This test
+     * verifies that reasoning against the real resolver rather than trusting the code-reading
+     * derivation.
+     */
+    fun testMultiFileOverlappingDottedPrefixesMultiResolveToBothStatements() {
+        myFixture.configureByFiles("resolve/overlap-main.tsp", "resolve/overlap-a.tsp", "resolve/overlap-b.tsp")
+        val text = myFixture.file.text
+        val usageStart = text.lastIndexOf("A.B.C.Model")
+        assertTrue("usage `A.B.C.Model` not found", usageStart >= 0)
+        val offsetB = usageStart + 2 // "B" segment
+
+        val reference = myFixture.file.findReferenceAt(offsetB) as? PsiPolyVariantReference
         assertNotNull(reference)
-        assertNull(
-            "plan 02 case 7 expects this to resolve to `model Model` inside `namespace A.B.C`" +
-                " — it currently does not (production gap in TypeSpecFileDeclarations /" +
-                " TypeSpecResolver's handling of dotted namespace intermediate segments," +
-                " reported in the M5.5a test report)",
-            reference!!.resolve(),
+        val results = reference!!.multiResolve(false)
+        val resolvedNamespaces = results.mapNotNull { it.element as? TypeSpecNamespaceStatement }
+        assertEquals(
+            "expected one candidate per file establishing the A.B prefix (overlap-a.tsp's " +
+                "A.B.C and overlap-b.tsp's A.B.D) — actual candidates: " +
+                resolvedNamespaces.map { "${it.name}@${it.containingFile.name}" },
+            2,
+            resolvedNamespaces.size,
         )
-        // Target assertion once the resolver supports this (plan 02 case 7):
-        // val target = myFixture.elementAtCaret
-        // assertTrue(target is TypeSpecModelStatement)
-        // assertEquals("Model", (target as TypeSpecNamedElement).name)
+        val containingFiles = resolvedNamespaces.map { it.containingFile.name }.toSet()
+        assertEquals(setOf("overlap-a.tsp", "overlap-b.tsp"), containingFiles)
+    }
+
+    /**
+     * `namespace A { }` declared standalone in `prefix-elsewhere-a.tsp`, and `namespace A.B.C;`
+     * declared (dotted sugar, prefix "A" is virtual) in `prefix-elsewhere-b.tsp`. Both imported
+     * by `prefix-elsewhere-main.tsp`. Resolving the leading "A" segment of `A.B.C.Model`
+     * observably yields BOTH: the real `namespace A { }` statement AND the `namespace A.B.C;`
+     * statement (indexed under name "A" at path `[]`, per the fix). Both statements genuinely
+     * establish the "A" prefix, so two Cmd-click candidates is consistent with how a plain
+     * reopened namespace (`namespace A {}` declared twice) already behaves elsewhere in this
+     * suite — not a regression, just the same multi-candidate shape applied to a mixed
+     * real/virtual prefix. Encoded as observed behaviour, not asserted as ideal UX (see report).
+     */
+    fun testDottedPrefixDeclaredSeparatelyElsewhereMultiResolve() {
+        myFixture.configureByFiles(
+            "resolve/prefix-elsewhere-main.tsp",
+            "resolve/prefix-elsewhere-a.tsp",
+            "resolve/prefix-elsewhere-b.tsp",
+        )
+        val text = myFixture.file.text
+        val usageStart = text.lastIndexOf("A.B.C.Model")
+        assertTrue("usage `A.B.C.Model` not found", usageStart >= 0)
+
+        val reference = myFixture.file.findReferenceAt(usageStart) as? PsiPolyVariantReference
+        assertNotNull(reference)
+        val results = reference!!.multiResolve(false)
+        val resolvedNamespaces = results.mapNotNull { it.element as? TypeSpecNamespaceStatement }
+        val actual = resolvedNamespaces.map { "${it.name}@${it.containingFile.name}" }.toSet()
+        assertEquals(
+            "observed candidates for leading segment 'A': $actual",
+            setOf("A@prefix-elsewhere-a.tsp", "C@prefix-elsewhere-b.tsp"),
+            actual,
+        )
     }
 
     // ---- 8: using -------------------------------------------------------------------------
