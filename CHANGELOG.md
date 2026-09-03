@@ -159,6 +159,32 @@
   `ANY`), so the first IDE start after installing this build re-indexes `.tsp` files —
   expected, not a regression. No new `<depends>` (ADR 0004 F1).
 
+- M5.6a/M5.6b (plan 05, ADR 0010): `import "…"` now navigates on Cmd-click, both forms the
+  owner reported — relative (`import "../master-data/branch.tsp";`) and bare/library
+  (`import "@typespec/openapi";`). New `resolve/TypeSpecImportResolver.kt` resolves any
+  specifier to a `TypeSpecFile`, matching the compiler's own entry-point order
+  (`exports["."]` under the `"typespec"` condition → `tspMain` → `main` → `main.tsp`,
+  verified against `entrypoint-resolution.js`/`source-loader.js`, not guessed — a naive
+  `lib/main.tsp` is wrong for `@typespec/compiler` and `@typespec/protobuf`); a bare
+  specifier is found by walking **up** from the importing file through `node_modules`
+  directories (the npm-workspaces-monorepo case), and a symlinked target is canonicalised
+  before becoming PSI (ADR 0010 D4). `TypeSpecImportGraph.resolveImportTarget` now delegates
+  here, so library imports also enter a file's transitive-closure tier B for free —
+  `@TypeSpec.OpenAPI.info`-shaped decorator navigation (a later milestone) will resolve
+  through this. `package.json` is read with a bundled Gson dependency (`build.gradle.kts`,
+  ADR 0010 D3 — no JSON library exists on the CE classpath and a JSON plugin dependency
+  would be a third `<depends>`); malformed/missing `package.json` and a non-`.tsp` target
+  (every real library entry point also `import`s a `.js` decorator implementation) both
+  resolve to `null`, silently. `TypeSpecSearchScopes` is untouched — this is a targeted
+  lookup along a declared `import` edge, never a project-wide search, so `node_modules`
+  stays excluded from tier C exactly as ADR 0008 shipped it. New
+  `psi/impl/TypeSpecImportStatementMixin.kt` (`import_statement` gains `mixin=` in
+  `TypeSpec.bnf`; no tree-shape or golden change) and `resolve/TypeSpecImportReference.kt`
+  (`PsiReferenceBase` with an explicit range over the `STRING` token's contents, always soft
+  per ADR 0010 D5 — a missing package is not a source error; `handleElementRename`/
+  `bindToElement` throw, same stated limitation as M5.5's identifier reference). No new
+  `<depends>`.
+
 ### Fixed
 
 - Grammar corrections from the ph-cdm corpus audit (plan 04 M6a/M6b; see

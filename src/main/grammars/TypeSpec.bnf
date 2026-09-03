@@ -140,8 +140,19 @@ private bad_top_level_token_ ::= bad_top_level_guard_ (IDENTIFIER | STRING | NUM
 private bad_top_level_guard_ ::= !('}' | 'model' | 'namespace' | 'using' | 'import'
   | 'op' | 'interface' | 'enum' | 'union' | 'alias' | 'scalar' | 'extern' | 'internal' | 'auto' | 'dec' | 'fn')
 
+// M5.6b (ADR 0010, plan 05): mixin="" attaches TypeSpecImportStatementMixin.getReference() so
+// the STRING contents navigate on Cmd-click. Same "string attribute, never loaded by the
+// generator" technique as identifier's mixin= above (ADR 0006 D7/F8). No implements= here —
+// unlike TypeSpecNamedElementMixin (which adds a *different*, shared interface), the mixin base
+// class already declares `implements TypeSpecImportStatement` itself in Kotlin source, same as
+// TypeSpecIdentifierMixin does for `identifier` above; an implements= pointing at this rule's
+// own generated interface name would make Grammar-Kit emit a self-referential
+// `interface TypeSpecImportStatement extends TypeSpecImportStatement`. Adding mixin= here does
+// not rename the generated TypeSpecImportStatementImpl class or its element type, so no parser
+// goldens change.
 import_statement ::= 'import' STRING ';' {
   pin=1
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecImportStatementMixin"
 }
 
 using_statement ::= 'using' qualified_name ';' {

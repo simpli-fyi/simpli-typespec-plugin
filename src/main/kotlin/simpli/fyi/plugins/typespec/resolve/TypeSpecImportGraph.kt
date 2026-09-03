@@ -2,7 +2,6 @@ package simpli.fyi.plugins.typespec.resolve
 
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.PsiManager
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.PsiModificationTracker
@@ -61,13 +60,9 @@ object TypeSpecImportGraph {
     private fun resolveImportTarget(file: TypeSpecFile, statement: TypeSpecImportStatement): TypeSpecFile? {
         val rawText = statement.string?.text ?: return null
         val path = rawText.trim('"')
-        // Bare specifiers (e.g. "@typespec/rest") are skipped — ADR 0004 open question 2.
-        if (!(path.startsWith("./") || path.startsWith("../"))) return null
-
-        val baseDir = file.virtualFile?.parent ?: return null
-        val target = baseDir.findFileByRelativePath(path) ?: return null
-        val tspVirtualFile = if (target.isDirectory) target.findChild("main.tsp") else target
-        val resolvedVirtualFile = tspVirtualFile ?: return null
-        return PsiManager.getInstance(file.project).findFile(resolvedVirtualFile) as? TypeSpecFile
+        // ADR 0010 (plan 05 M5.6a): both relative and bare (library) specifiers now resolve,
+        // via the shared entry-point rule that also backs TypeSpecImportReference (M5.6b) — no
+        // more startsWith("./") bail-out and no more hardcoded findChild("main.tsp").
+        return TypeSpecImportResolver.resolve(file, path)
     }
 }

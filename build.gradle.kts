@@ -52,6 +52,15 @@ tasks.named("compileJava")   { dependsOn(tasks.generateLexer, tasks.generatePars
 dependencies {
     testImplementation("junit:junit:4.13.2")
 
+    // ADR 0010 D3 (plan 05 M5.6a): no JSON library exists anywhere on the CE distribution's
+    // own classpath (verified against ideaIC-2025.2.6.3's lib/*.jar and lib/modules/*.jar — no
+    // Gson, no Jackson, no kotlinx-serialization), and the bundled JSON *plugin* would be a
+    // third <depends> (plugin.xml says a third needs a new ADR). Bundled into the plugin jar as
+    // an ordinary `implementation` dependency instead — this adds no <depends> and no runtime
+    // requirement on the user's machine; the plugin classloader serves it. Used only to read
+    // `exports`/`tspMain`/`main` out of a library's package.json (TypeSpecImportResolver).
+    implementation("com.google.code.gson:gson:2.11.0")
+
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         // ADR 0002 D1: intellijIdeaCommunity() is deprecated by the Gradle plugin in favour
