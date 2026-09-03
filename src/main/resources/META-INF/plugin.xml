@@ -15,6 +15,8 @@
         <p>Works on a bare Community Edition.</p>
     ]]></description>
 
+    <product-descriptor code="PSIMPLITSP" release-date="20260903" release-version="10"/>
+
     <depends>com.intellij.modules.platform</depends>
     <!-- M5c (plan 03; ADR 0006 F10, ADR 0003 D3): CE-confirmed against IC-252.28539.97 and
          owner-approved. spellchecker.support is `dynamic="true"`, no restart required. This is
