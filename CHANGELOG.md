@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-09
+
 - Rename refactoring (Shift-F6) for models, operations, interfaces, enums, unions, aliases,
   scalars, namespaces, `dec` and `fn` declarations. Renames the declaration and every
   resolvable usage project-wide, including `@decorator` usages and every file that reopens
@@ -32,3 +34,7 @@ First release. TypeSpec (`.tsp`) language support for IntelliJ IDEA Community Ed
   of `TypeSpec`, `OpenAPI` and `info` goes to its own declaration.
 - Editor conveniences: comment/uncomment, brace matching, quote handling, and
   spellchecking of comments and strings.
+
+[Unreleased]: https://github.com/simpli-fyi/jetbrains-typespec-plugin/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/simpli-fyi/jetbrains-typespec-plugin/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/simpli-fyi/jetbrains-typespec-plugin/commits/v1.0.0
