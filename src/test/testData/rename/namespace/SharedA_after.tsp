@@ -1,0 +1,3 @@
+namespace Renamed;
+
+model Alpha {}

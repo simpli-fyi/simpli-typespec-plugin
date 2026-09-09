@@ -1,0 +1,3 @@
+model Address {
+  street: string;
+}

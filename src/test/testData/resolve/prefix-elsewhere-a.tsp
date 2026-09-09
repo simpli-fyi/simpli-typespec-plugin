@@ -1,0 +1,3 @@
+namespace A {
+  model Marker {}
+}

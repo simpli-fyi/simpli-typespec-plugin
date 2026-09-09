@@ -1,0 +1,24 @@
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+// (comment)
+
+import "@typespec/json-schema";
+import "../../common/lagoon.tsp";
+import "../../common/bravo/delta.tsp";
+import "../../common/signals/payloaddata-umber-jade.tsp";
+import "../journey.tsp";
+import "../signals/signals.tsp";
+import "../signals/group.tsp";

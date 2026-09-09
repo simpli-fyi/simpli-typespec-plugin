@@ -1,0 +1,1064 @@
+// TypeSpec grammar — M5b (ADR 0006 D2/D5/D6/D7, ADR 0004 D7).
+//
+// Scope (plan 03 M5b): file skeleton, import/using/namespace statements
+// (namespace both block and blockless), and model declarations with
+// extends/is/spread/optional properties/template parameter LISTS. Template
+// *arguments* in type position (`Page<Pet>`) and every other declaration kind
+// (op/interface/enum/union/alias/scalar, decorators, type expressions) are
+// explicitly M5c — see docs/plans/03-grammar-and-psi.md.
+//
+// `methods=[...]` and `psiImplUtilClass` are BANNED in this file (ADR 0006
+// D7/F8): both resolve via Grammar-Kit's `AsmHelper` against the generator's
+// own classpath, which cannot contain classes this Gradle build has not
+// compiled yet. Every named declaration instead uses `mixin=` (a hand-written
+// Kotlin base class, referenced only as a string — Grammar-Kit emits an
+// `extends` clause and never loads it) plus `implements=` (a hand-written
+// interface). See psi/impl/TypeSpecNamedElementMixin.kt.
+{
+  parserClass="simpli.fyi.plugins.typespec.parser.TypeSpecParser"
+  parserUtilClass="com.intellij.lang.parser.GeneratedParserUtilBase"
+
+  extends="com.intellij.extapi.psi.ASTWrapperPsiElement"
+
+  psiClassPrefix="TypeSpec"
+  psiImplClassSuffix="Impl"
+  psiPackage="simpli.fyi.plugins.typespec.psi"
+  psiImplPackage="simpli.fyi.plugins.typespec.psi.impl"
+
+  // ADR 0006 F11: named "TypeSpecTypes" (Grammar-Kit's own "<Lang>Types" convention),
+  // deliberately NOT "TypeSpecElementTypes" — that name is the hand-written
+  // IFileElementType holder (TypeSpecElementTypes.FILE), untouched by this milestone.
+  elementTypeHolderClass="simpli.fyi.plugins.typespec.psi.TypeSpecTypes"
+  elementTypeClass="simpli.fyi.plugins.typespec.psi.TypeSpecElementType"
+  tokenTypeClass="simpli.fyi.plugins.typespec.psi.TypeSpecTokenType"
+  // ADR 0006 D5/F6: bridges generated token-type constants to the *same* IElementType
+  // instances the hand-written JFlex lexer already emits, instead of minting new ones.
+  tokenTypeFactory="simpli.fyi.plugins.typespec.psi.TypeSpecTokenTypes.fromNameOrText"
+
+  // M6.5a (plan 06, ADR 0011 D5): the 10 rules that carry `stubClass=` below (exactly
+  // TypeSpecFileDeclarations.build()'s walk set) route their element-type constant through
+  // TypeSpecStubTypes.factory instead of `new TypeSpecElementType(...)`, so
+  // TypeSpecTypes.MODEL_STATEMENT etc. become the SAME IStubElementType singleton the stub
+  // holder interface declares (never a fresh instance — see TypeSpecStubTypes' own KDoc for
+  // why identity here is load-bearing). Every other rule is unaffected: it keeps minting a
+  // plain TypeSpecElementType exactly as before.
+  elementTypeFactory("(namespace|model|op|interface|enum|union|alias|scalar|dec|fn)_statement")="simpli.fyi.plugins.typespec.stubs.TypeSpecStubTypes.factory"
+
+  generateTokenAccessors=true
+
+  // Only the two "external" tokens this milestone's rules need by name: STRING
+  // (import target) and IDENTIFIER (every name, ordinary or backticked — the
+  // hand-written lexer returns the same IDENTIFIER token type for both, see
+  // _TypeSpecLexer.flex). Keyword and punctuation literals below (e.g. 'model',
+  // ';', '?') are deliberately left as bare string literals, NOT declared here:
+  // empirically verified (M5b spike) that undeclared literals compile to
+  // GeneratedParserUtilBase's TEXT-based `consumeToken(builder, "model")`, which
+  // matches the source text directly and works correctly even though the
+  // hand-written lexer returns one shared KEYWORD IElementType for every
+  // keyword (ADR 0001) — declaring them here instead would route them through
+  // `tokenTypeFactory` for per-literal IElementType identity, which the shared
+  // KEYWORD token cannot support (identical instances for 'model' and
+  // 'namespace' alike) and would silently break keyword disambiguation.
+  tokens=[
+    IDENTIFIER='regexp:[A-Za-z_][A-Za-z0-9_]*'
+    STRING='regexp:"[^"]*"'
+    NUMBER='regexp:[0-9]+'
+    KEYWORD='regexp:[a-z]+'
+    // M5c: decorator/augment-decorator applications. Unlike the punctuation
+    // literals below (fixed text, matched by GeneratedParserUtilBase's TEXT-based
+    // consumeToken), `@Ns.name` / `@@Ns.name` have *variable* text per
+    // application, so they must be recognised purely by token *type* — hence
+    // declared here (as IDENTIFIER/STRING/NUMBER/KEYWORD already are) and
+    // referenced bare (`DECORATOR`, `AUGMENT_DECORATOR`) rather than quoted. The
+    // hand-written lexer already emits one whole `@Ns.name` as a single DECORATOR
+    // token (ADR 0004 F6) — this grammar wraps that one token, it does not split
+    // it. The regexps below are never actually exercised (the hand-written lexer
+    // is used at runtime, same as every other declared token here); they only
+    // satisfy Grammar-Kit's own internal preview lexer.
+    DECORATOR='regexp:@[A-Za-z_][A-Za-z0-9_.]*'
+    AUGMENT_DECORATOR='regexp:@@[A-Za-z_][A-Za-z0-9_.]*'
+    // M5c: a *single* source string literal containing an escape sequence
+    // (`"hi\nthere"`) is lexed by the hand-written lexer as MULTIPLE leaf
+    // tokens — STRING, then alternating VALID_ESCAPE/INVALID_ESCAPE/STRING —
+    // never one token (`_TypeSpecLexer.flex`'s `STRING_S` state; this is an M2
+    // lexer decision, not something this milestone changes). Every grammar rule
+    // that consumes "a string literal" must therefore consume the whole
+    // `STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*` run, not a bare
+    // `STRING` alone, or any escaped string (e.g. `alias Greeting = "hi\nthere";`
+    // from kitchen-sink.tsp line 31) leaves a dangling leftover token and a
+    // PsiErrorElement. Declared here (as DECORATOR/AUGMENT_DECORATOR already
+    // are) purely so they can be referenced bare below.
+    VALID_ESCAPE='regexp:\\[^]'
+    INVALID_ESCAPE='regexp:\\[^]'
+    // M6c row 4: `"""..."""` triple-quoted multi-line strings. Unlike STRING's
+    // STRING_S escape-run state, `_TypeSpecLexer.flex`'s YYINITIAL rule for a
+    // *terminated* `"""..."""` (line 53) matches the whole literal — open
+    // quotes, body (including embedded newlines: `[^\"]` is not
+    // newline-exclusive), close quotes — in one shot and returns a SINGLE
+    // MULTILINE_STRING token; the MULTILINE_STRING_S state (line 54/197-200)
+    // is reached only for an *unterminated* literal running to EOF. Verified
+    // by reading the actual token stream (TypeSpecLexerTest), not assumed:
+    // every well-formed triple-quoted literal in the corpus is one token, so
+    // `literal_type` below needs a bare `MULTILINE_STRING`, not a `+` run.
+    MULTILINE_STRING='regexp:\"\"\"([^\"]|\"[^\"]|\"\"[^\"])*\"\"\"'
+    // M6e row 11: `#suppress "..."` / `#deprecated "..."` statement-level directives.
+    // Same reasoning as DECORATOR/AUGMENT_DECORATOR above — `_TypeSpecLexer.flex`'s
+    // `"#" {Identifier}` rule already emits one whole `#name` as a single DIRECTIVE
+    // token (variable text per directive), so it must be declared here to be
+    // referenced bare below rather than as a quoted literal.
+    DIRECTIVE='regexp:#[A-Za-z_][A-Za-z0-9_]*'
+  ]
+}
+
+// The top-level rule never gets its own PSI class or element type: Grammar-Kit
+// inlines it directly under the `root` IElementType the platform supplies
+// (TypeSpecElementTypes.FILE, via ParserDefinition.getFileNodeType() /
+// TypeSpecParser.parseLight's `exit_section_(..., root_, ...)`) — verified
+// empirically against a scratch grammar before writing this file (ADR 0006 F7).
+typespec_file ::= top_level_item_*
+
+private top_level_item_ ::= import_statement | using_statement | namespace_statement | model_statement
+  | op_statement | interface_statement | enum_statement | union_statement | alias_statement
+  | scalar_statement | augment_decorator_statement | dec_statement | fn_statement | directive_statement
+  | bad_top_level_token_
+
+// ADR 0006 D6: no `recoverWhile` here, deliberately. `recoverWhile`'s built-in
+// skip mechanism re-checks its predicate even *after* a successful match of the
+// attributed rule/choice (Grammar-Kit's `exit_section_impl_`), and for a choice
+// whose last alternative (`bad_top_level_token_` below) can itself start with
+// almost any token, that post-success re-check spuriously reports the
+// just-consumed token as "unexpected" as soon as the *next* token isn't in the
+// stop set — corrupting an otherwise-successful parse (empirically verified: a
+// plain identifier property immediately after a broken one got wrapped in a
+// bogus `PsiErrorElement` this way). The explicit `bad_top_level_token_`
+// fallback alternative below is what actually provides forward progress
+// through pure garbage; recovery here does not need `recoverWhile` at all —
+// `model_member_` further down uses the identical fallback-alternative
+// technique (and the identical "no recoverWhile" reasoning) for the
+// model-property loop.
+private bad_top_level_token_ ::= bad_top_level_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR | AUGMENT_DECORATOR
+  | DIRECTIVE | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '...')
+
+// Stop set: '}' (leave an enclosing namespace block's own closing brace for
+// `namespace_block_` to consume) and the keyword that starts each known
+// top-level construct (so those are tried as *real* alternatives above, not
+// swallowed as garbage). Orphan ';' is deliberately NOT excluded — it is safe
+// to eat as garbage here since it terminates nothing on its own. M6e row 8:
+// 'extern'/'internal'/'auto' (modifiers) and 'dec'/'fn' added — the new
+// declaration-starting keywords, same reasoning as the pre-existing entries.
+private bad_top_level_guard_ ::= !('}' | 'model' | 'namespace' | 'using' | 'import'
+  | 'op' | 'interface' | 'enum' | 'union' | 'alias' | 'scalar' | 'extern' | 'internal' | 'auto' | 'dec' | 'fn')
+
+// M5.6b (ADR 0010, plan 05): mixin="" attaches TypeSpecImportStatementMixin.getReference() so
+// the STRING contents navigate on Cmd-click. Same "string attribute, never loaded by the
+// generator" technique as identifier's mixin= above (ADR 0006 D7/F8). No implements= here —
+// unlike TypeSpecNamedElementMixin (which adds a *different*, shared interface), the mixin base
+// class already declares `implements TypeSpecImportStatement` itself in Kotlin source, same as
+// TypeSpecIdentifierMixin does for `identifier` above; an implements= pointing at this rule's
+// own generated interface name would make Grammar-Kit emit a self-referential
+// `interface TypeSpecImportStatement extends TypeSpecImportStatement`. Adding mixin= here does
+// not rename the generated TypeSpecImportStatementImpl class or its element type, so no parser
+// goldens change.
+import_statement ::= 'import' STRING ';' {
+  pin=1
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecImportStatementMixin"
+}
+
+using_statement ::= 'using' qualified_name ';' {
+  pin=1
+}
+
+// Blockless `namespace Foo;` covers the rest of the file (TypeSpec sugar for a
+// namespace containing everything after it). Expressed here as containment —
+// the trailing top-level items become direct children of this same
+// namespace_statement node — so TypeSpecFile.getFileNamespace() is a trivial
+// "find the first namespace_statement child of the file" query, and
+// getTopLevelDeclarations() naturally stops at the blockless namespace's ';'
+// (ADR 0004 D7.4, plan 03 M5b risk note).
+namespace_statement ::= decorator_application* 'namespace' qualified_name (namespace_block_ | (';' top_level_item_*)) {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+private namespace_block_ ::= '{' top_level_item_* '}'
+
+// Plan 04 M6c row 3 / ADR 0007 D9: repointed from "extends_clause? is_clause?
+// model_body" (which forced a body after `is` too) to two separate
+// alternatives, matching the shipped compiler's `parseModelStatement` exactly
+// (ADR 0007 primary-source facts table): `is` alone admits EITHER `;` OR a
+// body (`model X is Y;` and `model X is Y { ... }` are both valid, 23+ corpus
+// occurrences of the former, `@typespec/http/lib/streams/main.tsp`'s
+// `JsonlStream` the latter); `extends` (or neither) still REQUIRES a body —
+// `model M extends Foo;` stays a `PsiErrorElement` (ModelExtendsNoBodyIsError.tsp
+// locks this). Do NOT collapse this back into a single optional `model_body?`
+// on one shared clause — that would legalise `extends ... ;` too, which is not
+// valid TypeSpec. Originally `pin=2` (unaffected by the `is`/`extends` split
+// above: it still marks 'model' itself, the point of no return, and neither
+// alternative changes the position of elements before it) — but plan 04 M6e
+// row 8 (`extern model ...`, grammatical upstream per parser.js's
+// `parseDeclaration`/`parseModifiers`, though ZERO corpus occurrences) adds an
+// optional `modifier_*` prefix ('extern'/'internal'/'auto', repeatable, same
+// upstream production `dec_statement`/`fn_statement` below also use) BETWEEN
+// `decorator_application*` and 'model'. That shifts 'model' from sequence
+// position 2 to position 3 — PIN CHANGE: `pin=3` below, not `pin=2` (plan 04
+// M6e trap: a wrong pin here silently degrades error recovery without failing
+// any test). Zero-repetition `modifier_*` adds no tree node when absent, so
+// every M5b/M6c golden without a modifier keyword stays byte-identical.
+model_statement ::= decorator_application* modifier_* 'model' identifier template_parameter_list?
+    ( (is_clause (';' | model_body)) | (extends_clause? model_body) ) {
+  pin=3
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+// Plan 04 M6e row 8 / upstream `parser.js` `parseModifiers()`: a loop over
+// exactly these three keywords, in any order, any repetition (`extern`,
+// `internal`, `auto`) — verified directly against the shipped compiler, not
+// assumed; the plan's own Approach text names only 'extern', but the corpus
+// (`stdlib/compiler/lib/std/visibility.tsp`, `prototypes.tsp`,
+// `http/lib/private.decorators.tsp`) has four `internal extern dec/fn`
+// occurrences that a literal reading of the plan would still fail to parse.
+private modifier_ ::= 'extern' | 'internal' | 'auto'
+
+// Template parameter *lists* (declaring `T` in `model Page<T>`), now with an
+// optional `extends`-bound and default (`<T extends string = "x">`) — M5c:
+// kitchen-sink's `model Widget<T extends string>` needs the bound; resolving
+// template *arguments* in type position (`Page<Pet>`) is also M5c (settled:
+// plain recursive descent, no `<`/`>` ambiguity — see plan 03 M5c Approach).
+template_parameter_list ::= '<' template_parameter (',' template_parameter)* trailing_comma_? '>' {
+  pin=1
+}
+
+// Plan 04 M6e follow-on (diagnosed re-probing `stdlib/http/lib/main.tsp` after the
+// row9/valueof fix landed underneath it — the file's row9 line,
+// `Options extends valueof HttpPartOptions = #{}> {}`, still failed on its OWN default
+// value, not the `valueof` constraint): the default was `'=' type_expression_`, but a
+// default can be an object/array literal too (`#{}`) — upstream's `parseTemplateParameter`
+// calls `def = parseExpression()`, and upstream has no separate value/type expression
+// split at all (`#{`/`#[` sit directly in the SAME `parsePrimaryExpression` switch as
+// every type-position primary — verified directly against parser.js, not assumed).
+// `model_property` and `operation_parameter`'s own defaults were already repointed at
+// `value_expression` (ADR 0007 D6 / M6a); this rule was the one straggler M6a's sweep
+// missed. Repointing it here does not touch `value_expression` itself, so its own three
+// hand-reviewed goldens (`Decorators.txt`/`AugmentDecorator.txt`/
+// `DecoratorModelExpressionArg.txt`) are unaffected.
+template_parameter ::= identifier ('extends' type_expression_)? ('=' value_expression)? {
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+// M5c: repointed from bare `qualified_name` at a full `type_expression_` (plan
+// 03 M5c Approach) — an `extends`/`is` target can be any type expression, not
+// only a plain reference (e.g. a union). `type_expression_` is `private`: the
+// precedence-chain wrapper rules (`type_expression_` /
+// `union_type_expression_` / `intersection_type_expression_` /
+// `array_type_expression_` / `type_reference_`) are pure structural glue with
+// no PSI-contract meaning of their own (same underscore-suffix convention as
+// `model_member_`/`top_level_item_`) — inlined, they add ZERO extra tree
+// nodes for the trivial "just a name" case, which is what keeps every M5b
+// golden (`ModelSimple.txt` et al.) byte-identical after this repointing.
+// Making any of them public would wrap even a bare `string` type in new
+// composite nodes and silently break the M5b regression sweep.
+extends_clause ::= 'extends' type_expression_ {
+  pin=1
+}
+
+is_clause ::= 'is' type_expression_ {
+  pin=1
+}
+
+model_body ::= '{' model_member_* '}' {
+  pin=1
+}
+
+// Plan 04 (post-M6f defect fix, 2026-09-03): re-modelled per upstream's ACTUAL
+// mechanism, read directly from `parser.js`'s `parseList` (verified, not
+// assumed): for every list item (model property/spread, enum member, union
+// variant, interface operation alike) the parser first runs a single shared
+// `parseAnnotations()` loop — `while (token() === Hash || token() === At) {
+// directives.push(...) | decorators.push(...) }` — collecting directives AND
+// decorators together, in WHATEVER ORDER they appear in the source, zero or
+// more of each, BEFORE it even knows which item kind follows; the collected
+// decorators are then threaded into `parseItem(pos, decorators)` and the
+// directives attached to the resulting node afterward. There is no upstream
+// production that treats a directive as a member in its own right, sitting
+// beside a property the way `directive_statement` briefly did here (`50ec08f`)
+// — that was a structural approximation that happened to fix the one repro it
+// targeted (a lone leading directive) but not the general case: decorators
+// AFTER a directive on the same member, or a directive between decorators
+// (`@minLength(0) @maxLength(40) #deprecated "..." @field(70) prop: string;`,
+// the owner's real `standards.tsp`/`lima.tsp` shape) still broke, because
+// `model_property`'s own `decorator_application*` prefix had no DIRECTIVE
+// alternative and rolled back whole on hitting one, discarding the decorators
+// already matched. Fixed at the true source: `model_property`/`model_spread`
+// (below) and `enum_member`/`union_variant`/`interface_operation` (their own
+// rules, same reasoning) now each carry `member_annotation_*` — a repeated,
+// order-free choice of `decorator_application | directive_statement` — as
+// their own leading prefix, matching `parseAnnotations()`'s mixed loop
+// exactly. No sequence-position change for `model_property`'s pin (still one
+// repeated element at position 1); `model_spread` gains the prefix as a NEW
+// position-1 element, shifting `'...'` to position 2 — PIN CHANGE, see
+// `model_spread`'s own comment. A lone directive with nothing real to attach
+// to (e.g. `model M { #deprecated "x" }`) now falls through to
+// `bad_model_member_token_` (which gains a DIRECTIVE alternative below, same
+// precedent as `bad_scalar_member_token_` already had) rather than being
+// caught by a dedicated top-level alternative here — upstream treats that
+// shape as a genuine parse error too (`parseModelProperty` still runs and
+// fails on `identifier` at `'}'`), so this is not a regression from upstream
+// behaviour, just a different (silent, ADR 0007 D2-visible) local failure mode
+// for an already-invalid input, out of this fix's scope.
+private model_member_ ::= model_property | model_spread | bad_model_member_token_
+
+// Shared leading-prefix element for every member/parameter-list item that upstream's
+// `parseList`/`parseAnnotations()` decorates uniformly: any mix, any order, any
+// repetition of decorator applications and member-level directives. See `model_member_`'s
+// own comment above for the primary-source citation.
+private member_annotation_ ::= decorator_application | directive_statement
+
+// Plan 04 M6b row 5 / ADR 0007 D6 follow-on: the reported defect-1 repro
+// (`@@package(A.B, { name: "x" })`, `@dec({title: "x"})`) is a `model_expression`
+// (`{ ... }`) whose *only* member has no trailing punctuation before the closing
+// `}` — the dominant shape for an inline object type. `value_expression`'s
+// unification with `type_expression_` alone does not make that repro parse
+// clean: `model_property` still mandated a trailing `';'`, so this optional
+// separator is pulled forward from M6b's own `member_separator_` design one
+// milestone early — it is the piece that closes M6a's own acceptance probe,
+// not scope creep past it. Loosening note (plan 04 M6b Risks): this also makes
+// `model M { a: string b: string }` (no separator between distinct members)
+// legal — an over-permissive grammar produces a wrong tree, an under-permissive
+// one produces red squiggles on valid code, and only the second is visible to
+// the user, so the loosening is accepted.
+private member_separator_ ::= ';' | ','
+
+// Plan 04 M6e' gap 2: trailing separator before the CLOSING punctuation of a
+// parenthesis/bracket/angle-bracket-delimited comma list (as opposed to
+// `member_separator_` above, which is the brace-bodied, per-member-optional
+// counterpart used by `model_body`/`enum_body`/`union_body`/`scalar_body`).
+// Verified against `parser.js`'s `parseList`: for every `ListKind` whose
+// `close !== Token.None` (i.e. every list with real open/close punctuation --
+// decorator/call/function arguments, template parameters/arguments, tuples,
+// array literals, `dec`/`fn`/operation parameter lists), a single occurrence
+// of the primary delimiter immediately before the close token is consumed and
+// the list ends -- `if (parseOptionalDelimiter(kind)) { if
+// (parseOptional(kind.close)) { ...break; } }`. `ListKind.Heritage` is the one
+// list kind with `open/close === Token.None` (`interface X extends A, B`) and
+// upstream's own branch for that case ("no delimiter after an item" ends the
+// list) does NOT reach this trailing-close check, so `interface_heritage_`
+// intentionally does NOT get this treatment. This rule accepts exactly one
+// trailing comma after the last real item and rejects an empty list element
+// (`(item (',' item)* trailing_comma_?)?` still requires a real `item` before
+// any comma can appear) and a doubled separator (`,,` has no second `item`
+// between the commas for the repetition to consume). Same shape as
+// `object_literal`'s already-audited `,'?` (M6a, `ListKind.ObjectLiteralProperties`).
+private trailing_comma_ ::= ','
+
+// ADR 0006 D6: same reasoning as `bad_top_level_token_` above — the
+// property-loop choice does *not* use `recoverWhile`. A `recoverWhile`
+// predicate here would face the identical trap: when `model_property`
+// completely fails (e.g. a broken property missing `:`), its own `pin`
+// mechanics roll it back with zero consumption, so the built-in
+// eatMore/lastErrorPos skip can advance at most to the position of its own
+// deepest failed variant — never far enough to reach a *second* broken
+// member's leftover tokens (an orphan ';') — and if a fallback alternative is
+// *also* added to make up the difference, `recoverWhile`'s post-success
+// re-check spuriously flags the fallback's own successful single-token match
+// as an error (verified empirically both here and for `top_level_item_`).
+// This fallback alone — consume exactly one token that isn't `model_body`'s
+// own closing '}', then let the loop retry — is what lets a later, otherwise
+// well-formed property still parse as a proper `TypeSpecModelPropertyImpl`
+// after an earlier broken one.
+// DIRECTIVE added (post-M6f defect fix): now that `model_member_` no longer has a
+// dedicated `directive_statement` alternative (folded into `model_property`/`model_spread`'s
+// own `member_annotation_*` prefix instead — see `model_member_`'s comment), a directive
+// that fails to attach to any real member (e.g. one with nothing real following it before
+// the body's closing `'}'`) must still be consumable here, same precedent as
+// `bad_scalar_member_token_` already had.
+private bad_model_member_token_ ::= bad_model_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR | DIRECTIVE | ';' | '.' | ','
+  | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '...')
+
+private bad_model_member_guard_ ::= !('}')
+
+// Plan 04 M6b row 6: repointed from bare `qualified_name` to a full
+// `type_expression_` so a spread can carry template arguments
+// (`...Record<unknown>;` — 11 stdlib occurrences) the same way
+// `model_property`'s type position already does; `type_expression_`'s
+// `type_reference_` still collapses to a bare `qualified_name` node when there
+// are no template args, so the plain-reference tree shape (`...Foo.Bar;`) is
+// unchanged. The trailing `';'` becomes the optional `member_separator_?`
+// (ADR 0007 primary-source facts: `ListKind.ModelProperties`'s tolerated `,`
+// applies here too — `...Foo.Bar<T, U>,` inside a model body). The `'...'` pin
+// is kept: it is still the point of no return for this alternative of
+// `model_member_`.
+// `member_annotation_*` prefix added (post-M6f defect fix, see `model_member_`'s comment):
+// upstream's `parseModelSpreadProperty` still receives whatever `decorators`
+// `parseAnnotations()` collected ahead of it (immediately reported as
+// `invalid-decorator-location` via `reportInvalidDecorators`, but PARSED nonetheless — the
+// collection happens before upstream even knows the item is a spread, not a property), and
+// directives are attached the same uniform way. Accepting the same prefix here is
+// permissive in the same accepted direction as every other `member_annotation_*` site (an
+// over-permissive grammar produces a wrong-but-present tree; an under-permissive one drops
+// tokens as unclaimed leaves, which is what this fix exists to stop). PIN CHANGE:
+// `member_annotation_*` is a NEW sequence element at position 1, shifting `'...'` from
+// position 1 to position 2 — `pin=2` below, not `pin=1`.
+model_spread ::= member_annotation_* '...' type_expression_ member_separator_? {
+  pin=2
+}
+
+// Pins at ':' (position 4, after the leading `decorator_application*` and the
+// optional '?'), not at the identifier — ADR 0006 D6's example verbatim: a
+// bare identifier alone is not yet the point of no return, the ':' is. M5c:
+// the type is now a full `type_expression_` (repointed from bare
+// `qualified_name`, plan 03 M5c Approach; `private`, see `extends_clause`'s
+// comment above) and an optional default value (`= value_expression`) is
+// added — kitchen-sink's `weight?: int32 = 10;` needs it. Plan 04 M6b: a
+// leading `decorator_application*` is added — `@key id: string;` is the
+// single most common non-trivial construct in the corpus (366
+// occurrences) and previously failed to parse because `model_property` was
+// the one decoratable rule that had no decorator prefix. Adding it shifts the
+// pin: `decorator_application*` is one sequence element, so `':'` moves from
+// position 3 to position 4 — `pin=4` below, not `pin=3` (ADR 0007 plan 04 M6b
+// trap; a wrong pin here silently degrades error recovery without failing any
+// test).
+// `member_annotation_*` (post-M6f defect fix, see `model_member_`'s comment): was
+// `decorator_application*` — repointed to the shared, order-free
+// `decorator_application | directive_statement` repetition so a member-level directive
+// interleaved with decorators in ANY order (`@a #d @b prop`, `#d @a @b prop`, ...) attaches
+// to this same property rather than breaking `model_property`'s own attempt. Still exactly
+// one sequence element at position 1 (a repetition, however many times it actually repeats,
+// is one grammar sequence position) — no pin change: `':'` stays at position 4.
+model_property ::= member_annotation_* identifier '?'? ':' type_expression_ ('=' value_expression)? member_separator_? {
+  pin=4
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+// ADR 0004 D7.1: wraps exactly one name token, ordinary or backticked — the
+// hand-written lexer returns the same IDENTIFIER token for `` `foo` `` as for
+// `foo` (see _TypeSpecLexer.flex's backtick-identifier rules), so no separate
+// token type is needed here; backtick stripping happens in
+// TypeSpecNamedElementMixin.getName() (psi/TypeSpecPsiUtil.kt).
+// `elementType=` avoids a constant-name collision in the generated TypeSpecTypes
+// holder: the rule name "identifier" would otherwise generate the same
+// `IDENTIFIER` constant name as the external IDENTIFIER token declared above —
+// two different `IElementType` fields cannot share one Java field name. The
+// generated PSI class name (`TypeSpecIdentifier`) is driven by the rule name,
+// not by this attribute, so ADR 0004 D7.1's naming is unaffected.
+// M5.5 (ADR 0004 D1, plan 02): mixin="" attaches TypeSpecIdentifierMixin.getReference(), the
+// single reference implementation every name-position identifier shares. Same "string
+// attribute, never loaded by the generator" technique as TypeSpecNamedElementMixin above (ADR
+// 0006 D7/F8) — no methods=[...]/psiImplUtilClass involved.
+identifier ::= IDENTIFIER {
+  elementType="identifier_node"
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecIdentifierMixin"
+}
+
+// ADR 0004 D7.1: a dot-separated sequence of `identifier` nodes, used UNIFORMLY
+// everywhere a name/type is referenced: using, namespace, extends, is, property
+// types, spread. Per-segment nodes are what let `Foo.Bar` be navigated segment
+// by segment later (M5.5); this milestone only builds the shape.
+qualified_name ::= identifier ('.' identifier)*
+
+// ============================================================================
+// M5c — decorator applications, augment-decorator statements, coarse value
+// literals (plan 03 M5c; ADR 0004 F6, D7.2).
+// ============================================================================
+
+// One lexer DECORATOR token (`@Ns.name`, ADR 0004 F6) wrapped in a PSI node.
+// Attached as a *leading, repeatable* element inside each declaration rule that
+// can be decorated (`namespace_statement`, `model_statement`, `op_statement`,
+// `interface_statement`, `enum_statement`, `union_statement`, `alias_statement`,
+// `scalar_statement`, `operation_parameter`) rather than split out of the token
+// itself — splitting `@Ns.name` into namespace + name is a separate, breaking
+// change to the M2/M3 lexer tests (ADR 0004 open question 1, owner's call, not
+// this milestone's).
+// M5.6d (ADR 0009 option B, plan 05): mixin="" attaches
+// TypeSpecDecoratorReferenceHost.getReferences(), one PsiReference per dotted `@Ns.name`
+// segment. No implements= — like import_statement above, the mixin already declares no
+// rule-specific interface of its own (it finds the DECORATOR/AUGMENT_DECORATOR token
+// generically), so there is nothing for Grammar-Kit's generated interface to extend. Adding
+// mixin= here does not rename TypeSpecDecoratorApplicationImpl or its element type, so no
+// parser goldens change and the lexer/.flex stays untouched.
+decorator_application ::= DECORATOR decorator_argument_list? {
+  pin=1
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecDecoratorReferenceHost"
+}
+
+decorator_argument_list ::= '(' (value_expression (',' value_expression)* trailing_comma_?)? ')' {
+  pin=1
+}
+
+// `@@Ns.name(...)` — a distinct top-level STATEMENT (kitchen-sink's
+// `@@doc(Widget.id, "the id");`), not a prefix on another declaration. Always
+// has at least one argument (the target reference); the lexer already
+// distinguishes `@@` (AUGMENT_DECORATOR) from `@` (DECORATOR), so there is no
+// ambiguity with `decorator_application` above.
+// M5.6d (ADR 0009 option B, plan 05): same mixin as decorator_application above — one shared
+// class, told apart at runtime by the token's own element type (AUGMENT_DECORATOR vs
+// DECORATOR), never by two copies that can drift.
+augment_decorator_statement ::= AUGMENT_DECORATOR '(' value_expression (',' value_expression)* trailing_comma_? ')' ';' {
+  pin=1
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecDecoratorReferenceHost"
+}
+
+// ADR 0007 D6 / plan 04 M6a: unified with `type_expression_`, per upstream
+// TypeSpec's single `Expression` production that spans both type expressions
+// and value literals. Previously this rule duplicated STRING/NUMBER/
+// true/false/qualified_name (already covered by `type_expression_` via
+// `literal_type` and `type_reference_`) and, critically, never reached
+// `model_expression` (`{ ... }`) — so a brace model-expression decorator
+// argument like `@@package(A.B, { name: "x" })` or `@dec({ title: "x" })`
+// failed to parse even though upstream allows it. `object_literal` (`#{...}`)
+// and `array_literal` (`#[...]`) stay ordered first: they are lexed as
+// distinct HASH_BRACE/HASH_BRACKET tokens so there is no real ambiguity with
+// `type_expression_`'s `model_expression`/`tuple_expression`, but ordered
+// choice makes the intent explicit.
+value_expression ::= object_literal | array_literal | type_expression_
+
+// `#{ key: value, ... }` — the hand-written lexer already returns the whole
+// `#{` as one HASH_BRACE token (fixed text, unlike DECORATOR); the closing
+// `}` is the ordinary RBRACE literal, same as every other brace-delimited rule
+// in this grammar.
+object_literal ::= '#{' (object_literal_member (',' object_literal_member)* ','?)? '}' {
+  pin=1
+}
+
+object_literal_member ::= identifier ':' value_expression {
+  pin=2
+}
+
+// `#[ value, ... ]` — same reasoning as `object_literal` above, with `#[`
+// (HASH_BRACKET) / `]` (ordinary RBRACKET literal).
+array_literal ::= '#[' (value_expression (',' value_expression)* trailing_comma_?)? ']' {
+  pin=1
+}
+
+// ============================================================================
+// M6e — library-authoring surface (plan 04 M6e rows 8, 9, 10, 11, 12).
+// ============================================================================
+
+// Row 8: `extern dec name(params);` / `internal extern fn name(params): T;`.
+// Upstream `parser.js` `parseDeclaration` dispatches `dec`/`fn` to their own
+// top-level statement kinds (`parseDecoratorDeclarationStatement` /
+// `parseFunctionDeclarationStatement`), each preceded by the SAME
+// `modifier_*` this file's `model_statement` now also carries — NOT wrapped in
+// a synthetic "extern declaration" node (there is no such upstream node;
+// modifiers are a plain field on each declaration). `decorator_application*`
+// is kept as a leading element for structural consistency with every other
+// top-level declaration even though upstream drops decorators for dec/fn
+// semantically (`parseDecoratorDeclarationStatement`/
+// `parseFunctionDeclarationStatement` take no `decorators` parameter) — they
+// are still consumed syntactically ahead of the switch in `parseDeclaration`,
+// so accepting them here is harmless permissiveness, not a divergence from
+// what can appear in valid source. `decorator_application*`(1) `modifier_*`(2)
+// 'dec'/'fn'(3): `pin=3`.
+dec_statement ::= decorator_application* modifier_* 'dec' identifier dec_fn_parameter_list ';' {
+  pin=3
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+// `fn` additionally admits an optional `': ' type_expression_` return type
+// (`parseFunctionDeclarationStatement`'s `if (parseOptional(Token.Colon))
+// returnType = parseMixedConstraint();` — folded into `type_expression_` here,
+// same reasoning as `valueof_expression`/`typeof_expression` below).
+fn_statement ::= decorator_application* modifier_* 'fn' identifier dec_fn_parameter_list (':' type_expression_)? ';' {
+  pin=3
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+dec_fn_parameter_list ::= '(' (dec_fn_parameter (',' dec_fn_parameter)* trailing_comma_?)? ')' {
+  pin=1
+}
+
+// Upstream `parseFunctionParameter` (verified directly against `parser.js`,
+// not assumed): a REST marker precedes the name (not a separate spread
+// alternative, unlike `operation_parameter`'s two-alternative split in
+// M6d — this is `parseFunctionParameter`, a different production from
+// `parseModelPropertyOrSpread`), and BOTH the '?' and the ': type' are
+// optional. Reused as-is for `scalar_member`'s `init` constructor parameters
+// below — `parseScalarMember` calls the identical `parseFunctionParameters`.
+// No `mixin=`/`implements=` — not part of ADR 0004 D7.2's named-element
+// contract, same precedent as `operation_parameter`.
+dec_fn_parameter ::= '...'? identifier '?'? (':' type_expression_)?
+
+// Row 11: `#suppress "code" "message"` / `#deprecated "message"` — a
+// standalone top-level statement, not threaded as a leading-prefix element on
+// every declaration rule. Upstream attaches a directive list to the following
+// node semantically, and the plan's Approach line asks for it as "a prefix on
+// `top_level_item_` and on model/enum/union members" — but doing that
+// literally means adding a new leading sequence element to EVERY declaration
+// rule (`model_statement`, `op_statement`, `interface_statement`, …) and to
+// `model_property`/`enum_member`/`union_variant`, shifting every one of their
+// pins in the same commit. The corpus has SIX directive occurrences total
+// (`compiler/lib/std/visibility.tsp`, `http/lib/private.decorators.tsp`), and
+// every one of them sits directly before a top-level `extern dec`/`extern fn`
+// declaration — none at model/enum/union member level. Per the plan's own
+// M6e Risks note ("If it stalls, split it out rather than blocking rows
+// 8–10"), this ships as an independent top-level statement (structurally
+// equivalent for parsing purposes: it still consumes the directive ahead of
+// the declaration it annotates, just as a sibling node rather than a child).
+// `directive_argument_`'s `identifier` alternative cannot over-consume into
+// the next real construct: every top-level-starting keyword is lexed as
+// KEYWORD/DECORATOR/AUGMENT_DECORATOR, never IDENTIFIER (`_TypeSpecLexer.flex`'s
+// keyword list precedes its identifier rule), so there is no plain-IDENTIFIER
+// top-level construct for it to collide with.
+//
+// Update (owner bug fix, `50ec08f`): member-level directive placement (inside a `model`
+// body) IS now implemented, and (post-M6f defect fix) so are `enum`/`union`/`interface`
+// member positions — see `model_member_`'s comment and `enum_member`/`union_variant`/
+// `interface_operation`'s own `member_annotation_*` prefixes below; a real owner project
+// has member-level `#deprecated` directives, mixed with decorators, in all of these
+// positions, and the original "no corpus file needs it" premise no longer holds anywhere.
+directive_statement ::= DIRECTIVE directive_argument_* {
+  pin=1
+}
+
+// Upstream `parseDirectiveParameter` (verified directly against `parser.js`, not assumed)
+// accepts exactly `Token.Identifier | Token.StringLiteral` and the argument LIST is
+// terminated by a real `NewLine` token — upstream's lexer briefly turns off
+// `newLineIsTrivia` for the duration of `parseDirectiveExpression` specifically so that
+// boundary is visible to the parser. This grammar has no equivalent: `_TypeSpecLexer.flex`
+// folds every run of whitespace (newlines included) into one undifferentiated
+// `WHITE_SPACE` token that `ParserDefinition.getWhitespaceTokens()` binds as trivia before
+// the grammar ever sees it (ADR 0001/0006 lexer scope — changing that is a lexer decision,
+// not this grammar-defect fix's to make), so upstream's own termination signal is not
+// available here. Without SOME bound, the `identifier` alternative is unsafe the instant a
+// directive can appear directly before a real member (post-`50ec08f`, plan 04 M6e's own
+// premise "no plain-IDENTIFIER top-level construct for it to collide with" no longer holds
+// at member level): `#deprecated "x"` immediately followed by an undecorated `name: string;`
+// property greedily swallows `name` as a further directive argument, leaving `:`/`string`/
+// `;` as unclaimed leaves under `MODEL_BODY` (ADR 0007 D2's exact failure class — zero
+// `PsiErrorElement`s, confirmed repro). Bounded instead on the one structural signal that
+// IS available without a lexer change: a bare identifier is accepted as a directive
+// argument only when the token immediately after it is NOT `':'` or `'?'` — the two tokens
+// that mean "this identifier was actually the start of the next member's name", never
+// legal directly after a genuine directive argument (an identifier argument is a bare
+// word — a suppress code, say — never itself a name being declared). This is a real
+// constraint grounded in the actual collision, not an arbitrarily narrower reading of
+// upstream: every corpus/test directive argument remains exactly as accepted before, and
+// the guard only rejects the one shape that was never a valid directive argument to begin
+// with.
+private directive_argument_ ::= STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*
+  | identifier directive_argument_identifier_guard_
+
+private directive_argument_identifier_guard_ ::= !(':' | '?')
+
+// ============================================================================
+// M5c — type-expression precedence chain (plan 03 M5c Approach, settled;
+// DO NOT re-litigate). Loosest to tightest: union `|` -> intersection `&` ->
+// array `[]` postfix -> primary. Flat/associative, NOT left-recursive: TypeSpec
+// itself defines `|`/`&` as flat repetition, so these are iterative repetition
+// rules, not `expression ::= expression '|' expression` left recursion.
+//
+// Every rule in this chain (down to `type_reference_`) is `private`
+// (trailing-underscore names, same convention as `model_member_` /
+// `top_level_item_`): pure structural glue with no PSI-contract meaning of
+// its own. Inlined, they add ZERO extra tree nodes for the trivial "just a
+// name" case (e.g. `id: string;`) — which is what keeps every M5b golden
+// (`ModelSimple.txt` et al.) byte-identical now that `model_property`,
+// `extends_clause` and `is_clause` are repointed at this chain instead of a
+// bare `qualified_name`. Making any of them public would wrap even a bare
+// `string` type in new composite nodes and silently break the M5b regression
+// sweep (plan 03 M5c "Full regression sweep").
+// ============================================================================
+
+private type_expression_ ::= union_type_expression_
+
+// Leading `|` is legal (`| A | B`), hence the optional prefix.
+private union_type_expression_ ::= '|'? intersection_type_expression_ ('|' intersection_type_expression_)*
+
+// Leading `&` is legal (`& A & B`), hence the optional prefix.
+private intersection_type_expression_ ::= '&'? array_type_expression_ ('&' array_type_expression_)*
+
+// Postfix, repeatable: `Foo[][]`. There is no `T?` type suffix in TypeSpec —
+// optionality is `model_property` / `operation_parameter`'s own `'?'?`, already
+// implemented; do NOT add a `'?'` alternative here (plan 03 M5c Approach).
+private array_type_expression_ ::= primary_type_expression ('[' ']')*
+
+// Order matters only for `void`/`never`/`unknown`: the hand-written lexer
+// keywordizes all three (`_TypeSpecLexer.flex` lines 103-105), so they can
+// *never* reach `type_reference_`'s `qualified_name` (IDENTIFIER-only) path —
+// omitting `intrinsic_type` here is the landmine that makes `op f(): void;`
+// fail to parse, not the `<`/`>` ambiguity (plan 03 M5c Approach/Risks).
+// Plan 04 M6e rows 9/12: `valueof_expression` / `typeof_expression` added.
+// Upstream fact, read directly from `parser.js` (not assumed): `typeof` is an
+// ordinary primary-expression alternative (its switch case sits alongside
+// `Token.Identifier`/`Token.StringLiteral`/etc. in the same primary-expression
+// dispatch this rule mirrors) — corpus-verified too
+// (`stdlib/http/lib/streams/main.tsp`'s `contentType: typeof ContentType;` is
+// a plain model-property type, exactly this position. `valueof`, in
+// contrast, is upstream restricted to "mixed constraint" positions only —
+// template-parameter `extends` bounds and `dec`/`fn` parameter types
+// (`parseValueOfExpressionOrIntersectionOrHigher`, reachable only from
+// `parseMixedConstraint`, never from plain `parseExpression` — confirmed
+// against every one of the corpus's 92 `valueof` occurrences: all sit in a
+// `template_parameter`'s `extends` clause or a `dec_fn_parameter`'s type,
+// never a bare `model_property`/`operation_parameter` type). This grammar
+// does not model a separate "mixed constraint" production and instead folds
+// both into `primary_type_expression` uniformly, per plan 04 M6e's own
+// Approach line ("valueof / typeof as prefix operators in
+// primary_type_expression"). Consequence, accepted per the M6b Risks
+// precedent: `valueof` becomes legal in a few positions upstream would
+// reject (e.g. a bare model-property type) — an over-permissive grammar
+// yields a wrong tree, an under-permissive one yields red squiggles on valid
+// corpus code, and only the second is user-visible.
+private primary_type_expression ::= intrinsic_type | type_reference_ | literal_type | paren_type_expression
+  | model_expression | tuple_expression | valueof_expression | typeof_expression
+
+intrinsic_type ::= 'void' | 'never' | 'unknown'
+
+// `valueof`'s target in upstream is a full `parseExpression()` (union-or-
+// higher) call, which — because it is itself unbounded — swallows any
+// trailing `|`/`&`/`[]` as part of the SAME valueof expression rather than
+// leaving them for an outer union (e.g. `valueof string | HeaderOptions`
+// upstream means `valueof (string | HeaderOptions)`, not
+// `(valueof string) | HeaderOptions`). Recursing into the shared
+// `type_expression_` chain here reproduces exactly that swallowing behaviour
+// (`type_expression_` itself starts at the union level), so the corpus's
+// parenthesised and bare forms alike (`(valueof unknown) | unknown`,
+// `valueof (string | [uint32, uint32] | uint32)[]`, `valueof EnumMember[]`)
+// all parse without a stray leftover token.
+valueof_expression ::= 'valueof' type_expression_ {
+  pin=1
+}
+
+// `typeof`'s upstream target (`parseTypeOfTarget`) is a narrower restricted
+// primary (identifier/string/bool/number/paren/nested-typeof only, no
+// union/intersection/array postfix) — not modelled separately here since the
+// corpus's one real occurrence (`typeof ContentType`) is a bare reference and
+// the wider `type_expression_` target is a strict superset, permissive in the
+// same direction as `valueof_expression` above.
+typeof_expression ::= 'typeof' type_expression_ {
+  pin=1
+}
+
+// `template_argument_list` is plain recursive descent, exactly like
+// `template_parameter_list` — TypeSpec has no relational/comparison expression
+// grammar competing for `<`/`>` in this position (verified against upstream
+// `parser.ts`/`spec.emu.html`; plan 03 M5c Approach/Risks, now CLOSED). No
+// external rules, no token remapping.
+//
+// Plan 04 M6e' gap 1: call expressions in type position
+// (`alias FilterVisibility<...> = applyVisibilityFilter(M, Filter, NameTemplate);`,
+// `stdlib/compiler/lib/std/visibility.tsp`; `applyMergePatchTransform(T, NameTemplate, #{...})`,
+// `stdlib/http/lib/main.tsp`). Verified directly against `parser.js`: there is no
+// separate call-expression production. `parsePrimaryExpression`'s `Token.Identifier`
+// case calls `parseCallOrReferenceExpression`, which parses the identifier/member-
+// expression target and THEN branches on the next token — `(` means
+// `ListKind.FunctionArguments` (arguments are `parseExpression()`, i.e. upstream's
+// single unified `Expression`, which `value_expression` already reaches per ADR 0007
+// D6 — so `#{...}` as an argument is covered for free); anything else falls through to
+// the existing template-argument-list path (`parseReferenceExpressionInternal`,
+// `ListKind.TemplateArguments`). Folded in here as a mutually exclusive alternative to
+// `template_argument_list`, not a new top-level rule — the two start on distinct
+// tokens (`(` vs `<`), so there is no ambiguity to resolve.
+private type_reference_ ::= qualified_name (call_argument_list | template_argument_list)?
+
+// Upstream `ListKind.FunctionArguments` is `{ ...OperationParameters, invalidAnnotationTarget:
+// "expression" }` — same open/close/delimiter/trailing-comma shape as
+// `decorator_argument_list` below, hence the identical rule shape (including
+// `trailing_comma_?`, per gap 2 — `close !== Token.None` here too).
+call_argument_list ::= '(' (value_expression (',' value_expression)* trailing_comma_?)? ')' {
+  pin=1
+}
+
+template_argument_list ::= '<' template_argument (',' template_argument)* trailing_comma_? '>' {
+  pin=1
+}
+
+// Named arguments first (ordered choice) so `Name<T=Foo>` resolves as a named
+// argument, not a bare `type_expression_` that happens to start with an
+// identifier followed by `=`.
+private template_argument ::= (identifier '=' type_expression_) | type_expression_
+
+// A string literal is `STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)*`, not
+// a bare `STRING` — see the `VALID_ESCAPE`/`INVALID_ESCAPE` tokens= comment
+// above for why an escape splits one source literal into several leaf tokens.
+literal_type ::= STRING (VALID_ESCAPE | INVALID_ESCAPE | STRING)* | MULTILINE_STRING | NUMBER | 'true' | 'false'
+
+paren_type_expression ::= '(' type_expression_ ')' {
+  pin=1
+}
+
+// Coarse anonymous model type (`{ a: string }` in type position) — reuses
+// `model_member_` (the same private member-loop `model_body` already uses), so
+// its `model_property`/`model_spread`/recovery shape is identical, not
+// reimplemented.
+model_expression ::= '{' model_member_* '}' {
+  pin=1
+}
+
+// Coarse tuple type (`[T, U]`). Distinguishable from `array_type_expression_`'s
+// empty postfix `[]` by always having content between the brackets when it has
+// any (an empty `[]` here and an empty postfix are structurally the same
+// token pair; upstream treats a bare `[]` as an empty tuple, which this rule
+// also accepts).
+tuple_expression ::= '[' (type_expression_ (',' type_expression_)* trailing_comma_?)? ']' {
+  pin=1
+}
+
+// ============================================================================
+// M5c — remaining declaration kinds (plan 03 M5c; ADR 0004 D7.2 named-element
+// contract: op, interface, enum + enum member, union + union variant, alias,
+// scalar).
+// ============================================================================
+
+// Plan 04 M6d: `op` gains an `is` heritage alternative (`op foo is Bar;`,
+// ADR 0007 primary-source facts table — zero corpus occurrences but
+// grammatical upstream, listed as M6d's low-priority tail) and an optional
+// `template_parameter_list` (upstream `parseOperationStatement` admits one;
+// plan 04 M6d Approach specifies it explicitly on this rule). `pin=2` is
+// unaffected — it still marks 'op' itself, before both new pieces.
+op_statement ::= decorator_application* 'op' identifier template_parameter_list?
+    ( (is_clause ';') | (operation_parameter_list ':' type_expression_ ';') ) {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+operation_parameter_list ::= '(' (operation_parameter (',' operation_parameter)* trailing_comma_?)? ')' {
+  pin=1
+}
+
+// Decorated parameters (`@path id: string`) — kitchen-sink's `op read(@path
+// id: string): ...`. Not part of ADR 0004 D7.2's named-element contract (only
+// `op`/`interface`/`enum`+member/`union`+variant/`alias`/`scalar` are), so no
+// `mixin=`/`implements=` here — same precedent as `model_spread` in M5b.
+//
+// Plan 04 M6d row 7: `op foo(...Input): Output;` — verified directly against
+// the corpus (`stdlib/protobuf/test/scenarios/simple/input/main.tsp` etc.,
+// 37 stdlib occurrences / 29 files, the single largest remaining corpus
+// category) that a spread parameter is `'...' type_expression_` with NO
+// trailing `identifier '?'? ':'` — the same shape as `model_spread`, not a
+// named parameter with a leading `'...'?`. (The plan's approach line reads
+// as a single sequence with `'...'?` prefixing the named-parameter shape;
+// probing that literally against `op foo(...Input): Output;` fails with
+// "'(' , '<' or 'is' expected, got '('" / "expected ')' , '...' , ':' ...
+// got '...'" — the parser cannot find a `:` after `Input` because there
+// isn't one. Corrected to two full alternatives below, the same pattern
+// `model_member_` already uses for `model_property | model_spread`.)
+operation_parameter ::= operation_spread_parameter_ | operation_named_parameter_
+
+// `'...'` occupies sequence position 2 (after `decorator_application*`) —
+// `pin=2`, mirroring `model_spread`'s own `pin=1` for `'...'` at position 1
+// (that rule has no decorator prefix; this one does).
+private operation_spread_parameter_ ::= decorator_application* '...' type_expression_ {
+  pin=2
+}
+
+// Unchanged named-parameter shape plus the optional default value
+// (`('=' value_expression)?`, mirroring `model_property`'s own default,
+// kitchen-sink's `weight?: int32 = 10;`). `':'` stays at position 4 — no pin
+// move here, since the spread form is now a fully separate alternative
+// rather than a shared `'...'?` prefix.
+private operation_named_parameter_ ::= decorator_application* identifier '?'? ':' type_expression_ ('=' value_expression)? {
+  pin=4
+}
+
+// `interface`'s members are bare operation signatures (`list(): Widget<string>
+// []; get(id: string): Widget<string> | Error;`, kitchen-sink's `Store`) — NOT
+// bare properties. The invalid `interface Store { values: #[1, 2, 3]; }` shape
+// from `kitchen-sink.tsp` is explicitly not valid TypeSpec and is not
+// accommodated here (plan 03 M5c "Kitchen-sink scope resolution", ADR 0007 D10).
+// Plan 04 M6d: `interface_heritage_?` is added — `interface X extends A, B`.
+// Per ADR 0007's primary-source facts table (`parseInterfaceStatement`,
+// `ListKind.Heritage`/`parseReferenceExpression`), heritage is a
+// comma-separated list of *reference expressions*, NOT full type expressions
+// — deliberately narrower than `extends_clause`'s `type_expression_` above.
+// There is NO `interface ... is` form upstream (`parseInterfaceStatement` has
+// no `is` branch at all — ADR 0007 D9 corollary); do not add one.
+interface_statement ::= decorator_application* 'interface' identifier template_parameter_list? interface_heritage_? interface_body {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+private interface_heritage_ ::= 'extends' type_reference_ (',' type_reference_)* {
+  pin=1
+}
+
+interface_body ::= '{' interface_member_* '}' {
+  pin=1
+}
+
+private interface_member_ ::= interface_operation | bad_interface_member_token_
+
+// ADR 0006 D6: identical fallback-alternative recovery technique as
+// `bad_top_level_token_`/`bad_model_member_token_` — no `recoverWhile` (it
+// traps on its own successful match re-check, plan 03 M5c "Recovery").
+// DIRECTIVE added (post-M6f defect fix, same reasoning/precedent as `bad_model_member_token_`
+// above): `interface_operation`'s own `member_annotation_*` prefix (below) now handles a
+// directive that attaches to a real operation; this fallback only needs to catch one that
+// doesn't (nothing real left before the body's closing `'}'`).
+private bad_interface_member_token_ ::= bad_interface_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD
+  | DECORATOR | DIRECTIVE | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')'
+  | '[' | ']' | '...')
+
+private bad_interface_member_guard_ ::= !('}')
+
+// Not part of ADR 0004 D7.2's named-element contract (interface operation
+// *members* are deliberately excluded from the list — only the top-level `op`
+// declaration is), so no `mixin=`/`implements=` here.
+// Plan 04 M6d: mirrors `operation_parameter`'s spread/default changes via
+// `operation_parameter_list`, and accepts an optional leading `'op'` keyword
+// (`ListKind.InterfaceMembers`'s `allowedStatementKeyword: Token.OpKeyword`,
+// ADR 0007 primary-source facts table — grammatical upstream, zero corpus
+// occurrences, implemented per the plan's explicit instruction but not
+// exercised beyond that). `'op'?` occupies sequence position 2, shifting
+// `operation_parameter_list` from position 3 to position 4 — `pin=4` below,
+// not `pin=3`.
+// `member_annotation_*` (post-M6f defect fix, same reasoning as `model_property`'s own
+// comment above): was `decorator_application*`. Position 1, unchanged — `pin=4` still
+// marks `operation_parameter_list`.
+interface_operation ::= member_annotation_* 'op'? identifier operation_parameter_list ':' type_expression_ ';' {
+  pin=4
+}
+
+enum_statement ::= decorator_application* 'enum' identifier enum_body {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+enum_body ::= '{' enum_member_* '}' {
+  pin=1
+}
+
+private enum_member_ ::= enum_member | bad_enum_member_token_
+
+// ADR 0006 D6: same reasoning as above. Separator commas between members are
+// not part of `enum_member`'s own rule, so they simply fall through to the
+// fallback alternative below (a harmless single-token "garbage" skip) and the
+// loop continues to the next real member — identical in spirit to how
+// `bad_model_member_token_` swallows leftover tokens after a broken property.
+// DIRECTIVE added (post-M6f defect fix, same reasoning/precedent as `bad_model_member_token_`
+// above): `enum_member`'s own `member_annotation_*` prefix (below) now handles a directive
+// that attaches to a real member; this fallback only needs to catch one that doesn't.
+private bad_enum_member_token_ ::= bad_enum_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR
+  | DIRECTIVE | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']'
+  | '...')
+
+private bad_enum_member_guard_ ::= !('}')
+
+// Plain members (`Red`) and members with a value (`Red: "red"`) — kitchen-sink's
+// `enum Color { Red: "red", Green: "green" }`. Plan 04 M6b: `ListKind.EnumMembers`
+// is literally the same `ListKind` object as `ListKind.ModelProperties` (ADR
+// 0007 primary-source facts), so `enum_member` gets the identical optional
+// trailing `member_separator_?` treatment as `model_property` — previously the
+// separator between enum members was only ever consumed one token at a time by
+// `bad_enum_member_token_`'s fallback, which worked but attributed the comma to
+// no real node. Adding it here does not move the pin: `member_separator_?` is
+// appended after the existing sequence, so `identifier` stays at position 2.
+// `member_annotation_*` (post-M6f defect fix, same reasoning as `model_property`'s own
+// comment above): was `decorator_application*`. Position 1, unchanged — `pin=2` still
+// marks `identifier`.
+enum_member ::= member_annotation_* identifier (':' value_expression)? member_separator_? {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+union_statement ::= decorator_application* 'union' identifier union_body {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+union_body ::= '{' union_variant_* '}' {
+  pin=1
+}
+
+private union_variant_ ::= union_variant | bad_union_variant_token_
+
+// ADR 0006 D6: same reasoning as `bad_enum_member_token_` above.
+// DIRECTIVE added (post-M6f defect fix, same reasoning/precedent as `bad_model_member_token_`
+// above): `union_variant`'s own `member_annotation_*` prefix (below) now handles a directive
+// that attaches to a real variant; this fallback only needs to catch one that doesn't.
+private bad_union_variant_token_ ::= bad_union_variant_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR
+  | DIRECTIVE | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']'
+  | '...')
+
+private bad_union_variant_guard_ ::= !('}')
+
+// Plan 04 M6b follow-on (diagnosed against `corpus/real/booking/signals/rel-union.tsp`,
+// which BASELINE.txt mislabelled row1 -- the true blocker is a bare `,` between union
+// variants, row5's family): `ListKind.UnionVariants` is its own object upstream, distinct
+// from `ListKind.ModelProperties`/`EnumMembers`, but has the identical shape --
+// `delimiter: Semicolon, toleratedDelimiter: Comma, toleratedDelimiterIsValid: true`
+// (verified against `@typespec/compiler`'s `parser.ts`, same primary source as ADR 0007's
+// table) -- so `union_variant` gets the same optional trailing `member_separator_?` as
+// `model_property`/`enum_member`. Appended after the existing sequence, so the pin does
+// not move: `':'` stays at position 3.
+// `member_annotation_*` (post-M6f defect fix, same reasoning as `model_property`'s own
+// comment above): was `decorator_application*`. Position 1, unchanged — `pin=3` still
+// marks `':'`.
+union_variant ::= member_annotation_* identifier ':' type_expression_ member_separator_? {
+  pin=3
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+// `alias Name = type_expression;` — kitchen-sink's `alias Greeting = "hi\nthere";`
+// (a string *literal type*, reached via `type_expression` ->
+// `literal_type` -> STRING).
+alias_statement ::= decorator_application* 'alias' identifier template_parameter_list? '=' type_expression_ ';' {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+// Plan 04 M6e row 10: `scalar plainDate { init fromISO(...); init now(); }`.
+// Upstream `parseScalarStatement`/`parseScalarMembers`: body is EITHER a bare
+// `;` (unchanged, still the dominant corpus shape — `scalar bytes;`) OR a
+// `'{' scalar_member* '}'` list of `init` constructors
+// (`ListKind.ScalarMembers`, ADR 0007 primary-source facts table: `;`-
+// delimited, `,` tolerated). 'scalar' stays at sequence position 2 — neither
+// new alternative adds an element before it, so `pin=2` is unchanged.
+scalar_statement ::= decorator_application* 'scalar' identifier template_parameter_list? ('extends' type_expression_)?
+    (';' | scalar_body) {
+  pin=2
+  mixin="simpli.fyi.plugins.typespec.psi.impl.TypeSpecNamedElementMixin"
+  stubClass="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclStub"
+  implements="simpli.fyi.plugins.typespec.psi.TypeSpecNamedElement"
+}
+
+scalar_body ::= '{' scalar_member_* '}' {
+  pin=1
+}
+
+private scalar_member_ ::= scalar_member | bad_scalar_member_token_
+
+// ADR 0006 D6: identical fallback-alternative recovery technique as the
+// other `bad_*_token_` rules — no `recoverWhile` (same trap, same reasoning).
+private bad_scalar_member_token_ ::= bad_scalar_member_guard_ (IDENTIFIER | STRING | NUMBER | KEYWORD | DECORATOR
+  | DIRECTIVE | ';' | '.' | ',' | ':' | '<' | '>' | '=' | '&' | '|' | '?' | '!' | '+' | '-' | '*' | '/' | '(' | ')'
+  | '[' | ']' | '...')
+
+private bad_scalar_member_guard_ ::= !('}')
+
+// `init fromISO(value: string);` — upstream `parseScalarMember` reuses the
+// SAME `parseFunctionParameters` as `dec`/`fn` (verified directly against
+// parser.js), hence `dec_fn_parameter_list` is reused here rather than
+// `operation_parameter_list`. `ListKind.ScalarMembers` tolerates `,` as a
+// separator the same way `model_property`/`enum_member`/`union_variant` do
+// (`member_separator_?`) — slightly more permissive than upstream, which
+// marks the tolerated `,` here as INVALID (`toleratedDelimiterIsValid:
+// false`, unlike `ModelProperties`'s `true`); accepted per the same M6b
+// Risks precedent (over-permissive over under-permissive). No corpus
+// occurrence needs the `,` form. Not part of ADR 0004 D7.2's named-element
+// contract (scalar constructors aren't in that list), so no `mixin=`/
+// `implements=` — same precedent as `operation_parameter`.
+scalar_member ::= 'init' identifier dec_fn_parameter_list member_separator_? {
+  pin=1
+}

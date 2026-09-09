@@ -1,0 +1,113 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <id>simpli.fyi.plugins.typespec</id>
+    <name>Simpli TypeSpec</name>
+    <vendor email="hello@simpli.fyi" url="https://simpli.fyi">simpli.fyi</vendor>
+    <description><![CDATA[
+        <p>TypeSpec (<code>.tsp</code>) language support for IntelliJ IDEA Community Edition.</p>
+        <ul>
+            <li>Syntax highlighting with a configurable colour scheme</li>
+            <li>Go to declaration across files, modules and imported libraries</li>
+            <li>Find usages</li>
+            <li>Rename refactoring, inline in the editor or through the Rename dialog,
+                updating every usage across the project</li>
+            <li>Navigable imports and decorator names</li>
+            <li>Comment/uncomment, brace matching, quote handling, spellchecking</li>
+        </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <!-- M5c (plan 03; ADR 0006 F10, ADR 0003 D3): CE-confirmed against IC-252.28539.97 and
+         owner-approved. spellchecker.support is `dynamic="true"`, no restart required. This is
+         the only sanctioned second <depends> — a third needs a new ADR. -->
+    <depends>com.intellij.modules.spellchecker</depends>
+
+    <resource-bundle>messages.TypeSpecBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType name="TypeSpec"
+                  implementationClass="simpli.fyi.plugins.typespec.TypeSpecFileType"
+                  fieldName="INSTANCE"
+                  language="TypeSpec"
+                  extensions="tsp"/>
+        <lang.parserDefinition
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.parser.TypeSpecParserDefinition"/>
+        <lang.syntaxHighlighterFactory
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.highlighting.TypeSpecSyntaxHighlighterFactory"/>
+        <colorSettingsPage
+                implementation="simpli.fyi.plugins.typespec.highlighting.TypeSpecColorSettingsPage"/>
+        <lang.commenter
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.editor.TypeSpecCommenter"/>
+        <lang.braceMatcher
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.editor.TypeSpecBraceMatcher"/>
+        <lang.quoteHandler
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.editor.TypeSpecQuoteHandler"/>
+        <spellchecker.support
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.spellchecker.TypeSpecSpellcheckingStrategy"/>
+        <!-- M5.5 (ADR 0004 D1/D6, plan 02), body implemented M6.5g (ADR 0012 D4). No <depends>
+             needed (ADR 0004 F1): this EP is declared in the core com.intellij descriptor, same
+             as lang.parserDefinition. -->
+        <lang.elementManipulator
+                forClass="simpli.fyi.plugins.typespec.psi.TypeSpecIdentifier"
+                implementationClass="simpli.fyi.plugins.typespec.resolve.TypeSpecIdentifierManipulator"/>
+        <!-- M5.5b (ADR 0004 D6, plan 02): Find Usages. Requires no working element manipulator
+             — see TypeSpecFindUsagesProvider's KDoc. Registering this bumps the .tsp word-index
+             version (occurrences become IN_CODE/IN_COMMENTS/IN_STRINGS instead of ANY), so the
+             first IDE start after installing this build re-indexes .tsp files — expected. -->
+        <lang.findUsagesProvider
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.findusages.TypeSpecFindUsagesProvider"/>
+        <!-- M6.5a (plan 06, ADR 0011): stub infrastructure, zero behaviour change yet (no
+             <stubIndex> until M6.5b). Core EP, same provenance as lang.parserDefinition (ADR
+             0004 F1) — verified against META-INF/IdeaPlugin.xml:3168 and META-INF/Core.xml:46 of
+             ideaIC-2025.2.6.3. No new <depends>. Changing externalIdPrefix here is an ADR 0011
+             D6 item-3 stub-version bump. -->
+        <stubElementTypeHolder
+                class="simpli.fyi.plugins.typespec.stubs.TypeSpecStubTypes"
+                externalIdPrefix="tsp."/>
+        <!-- M6.5b (plan 06, ADR 0011 D3): the name index — "which declarations are named X",
+             keyed by simple name, filtered by the stub's own namespacePath field at query time
+             (TypeSpecStubQueries). Core EP, same provenance as stubElementTypeHolder above —
+             verified against META-INF/IdeaPlugin.xml:3460 and META-INF/Indexing.xml:10 of
+             ideaIC-2025.2.6.3. No new <depends>. -->
+        <stubIndex
+                implementation="simpli.fyi.plugins.typespec.stubs.TypeSpecDeclarationNameIndex"/>
+        <!-- M6.5f (plan 07, ADR 0012 D3/D10): wires TypeSpecKeywords/TypeSpecNames into the
+             rename dialog's own validation. No rename UI yet — that arrives in M6.5g/h. Core
+             EP (IdeaPlugin.xml:3938 of ideaIC-2025.2.6.3). No new <depends>. -->
+        <lang.namesValidator
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.refactoring.TypeSpecNamesValidator"/>
+        <!-- M6.5h (plan 07, ADR 0012 D5): the renameable set — model/op/interface/enum/union/
+             alias/scalar. Core EP (IdeaPlugin.xml:3942 of ideaIC-2025.2.6.3). No new <depends>. -->
+        <renamePsiElementProcessor
+                implementation="simpli.fyi.plugins.typespec.refactoring.TypeSpecRenamePsiElementProcessor"/>
+        <!-- M6.5h (plan 07, ADR 0012 D5/D7/D9): refuses member/template kinds, node_modules
+             declarations, and non-bare current names. Global EP, guarded on TypeSpecLanguage
+             first — see the class KDoc. Core EP (IdeaPlugin.xml:3947 of ideaIC-2025.2.6.3). No
+             new <depends>. -->
+        <vetoRenameCondition
+                implementation="simpli.fyi.plugins.typespec.refactoring.TypeSpecRenameVetoCondition"/>
+        <!-- M6.5j (plan 07, ADR 0012 F6): a decorator usage (`@Ns.name`/`@@Ns.name`) is
+             representable only over a bare identifier, so `dec`/`fn` cannot be renamed to a
+             name needing backticks. Without this, RenameUtil.isValidName's fallback
+             lang.namesValidator would accept it (it is representable for the declaration) and
+             the refactoring would fail mid-flight rewriting the first usage. Core EP
+             (IdeaPlugin.xml:3957 of ideaIC-2025.2.6.3). No new <depends>. -->
+        <renameInputValidator
+                implementation="simpli.fyi.plugins.typespec.refactoring.TypeSpecDecoratorRenameInputValidator"/>
+        <!-- M6.5k (plan 07, ADR 0012 D8): turns on Shift-F6 in-place rename for the seven plain
+             declaration kinds (model/op/interface/enum/union/alias/scalar); dec/fn/namespace and
+             everything TypeSpecRenameVetoCondition refuses keep the dialog. Core EP
+             (IdeaPlugin.xml:3935 of ideaIC-2025.2.6.3). No new <depends>. -->
+        <lang.refactoringSupport
+                language="TypeSpec"
+                implementationClass="simpli.fyi.plugins.typespec.refactoring.TypeSpecRefactoringSupportProvider"/>
+    </extensions>
+</idea-plugin>
